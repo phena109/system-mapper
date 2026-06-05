@@ -37,6 +37,21 @@ def _symbols(text: str) -> list[str]:
     return found[:20]
 
 
+def _python_symbols(text: str) -> list[str]:
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return _symbols(text)
+
+    nodes = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+    ]
+    nodes.sort(key=lambda node: (node.lineno, node.col_offset))
+    return [node.name for node in nodes[:20]]
+
+
 def _sentence_with(text: str, pattern: re.Pattern[str]) -> str:
     for line in text.splitlines():
         if pattern.search(line):
@@ -129,7 +144,10 @@ def summarize_component(root: Path | str, paths: list[Path | str], component: st
     for path, rel in zip(resolved, rel_scope):
         text = _safe_read(path)
         kind, _language = classify(path)
-        symbols = _symbols(text) if kind == "code" else []
+        if kind == "code" and path.suffix == ".py":
+            symbols = _python_symbols(text)
+        else:
+            symbols = _symbols(text) if kind == "code" else []
         note_parts: list[str] = []
         if symbols:
             entry_points.extend(f"{rel}:{symbol}" for symbol in symbols[:8])

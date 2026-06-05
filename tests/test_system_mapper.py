@@ -211,6 +211,27 @@ def export_invoice():
     assert "json" not in internal_targets
 
 
+def test_summary_uses_python_ast_to_include_async_entry_points(tmp_path: Path):
+    write(
+        tmp_path / "src" / "worker.py",
+        """
+async def refresh_system_map():
+    return 'updated'
+
+class MapWorker:
+    async def run_once(self):
+        return await refresh_system_map()
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["src/worker.py"], component="worker")
+
+    assert "src/worker.py:refresh_system_map" in summary.entry_points
+    assert "src/worker.py:MapWorker" in summary.entry_points
+    assert "src/worker.py:run_once" in summary.entry_points
+    assert any("refresh_system_map" in ev.symbols for ev in summary.evidence)
+
+
 def test_cli_prompt_update_mentions_living_system_changes():
     result = subprocess.run(
         [sys.executable, "-m", "system_mapper.cli", "prompt", "update", "--component", "billing/export"],
