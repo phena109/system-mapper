@@ -40,8 +40,9 @@ The first research pass found these durable directions:
 ### Capability
 
 1. **Parser-backed extraction**
-   - Add optional Tree-sitter or AST-based extractors for Python/JS/TS.
-   - Extract imports, function calls, classes, route declarations, decorators, SQL/table references, and config keys with source spans.
+   - Initial Python import dependency extraction now uses the stdlib AST to emit repository-local `internal` edges for bounded slices.
+   - Continue adding optional Tree-sitter or AST-based extractors for Python/JS/TS.
+   - Extract function calls, classes, route declarations, decorators, SQL/table references, and config keys with source spans.
 
 2. **Graph/community layer**
    - Store edges as JSONL.

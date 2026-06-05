@@ -188,6 +188,29 @@ def main():
     assert data_store_targets == []
 
 
+def test_summary_emits_internal_edges_for_python_imports_with_repo_targets(tmp_path: Path):
+    write(tmp_path / "src" / "billing" / "helpers.py", "def normalize_invoice():\n    return 'ok'\n")
+    write(tmp_path / "src" / "billing" / "settings.py", "API_URL = 'https://partner.example'\n")
+    write(
+        tmp_path / "src" / "billing" / "export.py",
+        """
+from .helpers import normalize_invoice
+import src.billing.settings
+import json
+
+def export_invoice():
+    return normalize_invoice()
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["src/billing/export.py"], component="billing/export")
+
+    internal_targets = {edge.target for edge in summary.edges if edge.kind == "internal"}
+    assert "src/billing/helpers.py" in internal_targets
+    assert "src/billing/settings.py" in internal_targets
+    assert "json" not in internal_targets
+
+
 def test_cli_prompt_update_mentions_living_system_changes():
     result = subprocess.run(
         [sys.executable, "-m", "system_mapper.cli", "prompt", "update", "--component", "billing/export"],

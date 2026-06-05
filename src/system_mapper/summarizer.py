@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -56,6 +57,60 @@ def _tables(text: str) -> list[str]:
     return found
 
 
+def _module_to_repo_path(root: Path, module: str) -> str | None:
+    candidate = root.joinpath(*module.split("."))
+    file_candidate = candidate.with_suffix(".py")
+    if file_candidate.is_file():
+        return str(file_candidate.relative_to(root))
+    package_candidate = candidate / "__init__.py"
+    if package_candidate.is_file():
+        return str(package_candidate.relative_to(root))
+    return None
+
+
+def _relative_import_module(path: Path, root: Path, module: str | None, level: int) -> str | None:
+    try:
+        package_parts = path.parent.relative_to(root).parts
+    except ValueError:
+        return None
+    keep = len(package_parts) - max(level - 1, 0)
+    if keep < 0:
+        return None
+    parts = list(package_parts[:keep])
+    if module:
+        parts.extend(part for part in module.split(".") if part)
+    return ".".join(parts) if parts else None
+
+
+def _python_internal_dependencies(root: Path, path: Path, text: str) -> list[str]:
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+
+    targets: list[str] = []
+    seen: set[str] = set()
+
+    def add(module: str | None) -> None:
+        if not module:
+            return
+        target = _module_to_repo_path(root, module)
+        if target and target not in seen:
+            targets.append(target)
+            seen.add(target)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                add(_relative_import_module(path, root, node.module, node.level))
+            else:
+                add(node.module)
+    return targets
+
+
 def summarize_component(root: Path | str, paths: list[Path | str], component: str | None = None) -> ComponentSummary:
     root = Path(root).resolve()
     resolved = [(Path(p) if Path(p).is_absolute() else root / str(p)).resolve() for p in paths]
@@ -93,6 +148,9 @@ def summarize_component(root: Path | str, paths: list[Path | str], component: st
         for table in _tables(text):
             if table.lower() not in {"table", "from", "join", "def", "function"}:
                 edges.append(Edge("data_store", rel, table, "medium"))
+        if kind == "code" and path.suffix == ".py":
+            for target in _python_internal_dependencies(root, path, text):
+                edges.append(Edge("internal", rel, target, "high"))
         if kind == "config":
             inputs.append(f"configuration: {rel}")
         if kind == "document":
