@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import re
 from pathlib import Path
 
@@ -26,6 +27,10 @@ def _safe_read(path: Path) -> str:
         return path.read_text(encoding="utf-8", errors="ignore")
     except OSError:
         return ""
+
+
+def _content_revision(text: str) -> str:
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
 
 def _symbols(text: str) -> list[str]:
@@ -173,7 +178,7 @@ def summarize_component(root: Path | str, paths: list[Path | str], component: st
             inputs.append(f"configuration: {rel}")
         if kind == "document":
             suggested_next.append(f"Check code/config that implements claims in {rel}")
-        evidence.append(Evidence(rel, kind, symbols, "; ".join(note_parts), "unknown"))
+        evidence.append(Evidence(rel, kind, symbols, "; ".join(note_parts), _content_revision(text)))
 
     purpose = "Evidence-backed component map for " + name
     if entry_points:

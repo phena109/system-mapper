@@ -51,7 +51,8 @@ The first research pass found these durable directions:
    - Emit subsystem-level summaries from lower-level summaries, preserving conflicts.
 
 3. **Document freshness scoring**
-   - Track source revision, modified time, and citation source.
+   - Initial implementation: each evidence record now carries a deterministic truncated SHA-256 content revision, giving update workers a stable basis for source freshness/change checks.
+   - Continue tracking source modified time and citation source where useful.
    - Mark docs stale when code/config cited by the doc changes.
 
 4. **Prompt pack**

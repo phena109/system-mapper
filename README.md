@@ -98,7 +98,7 @@ uv run system-mapper prompt update --component billing/export
 Each component summary is intended to answer:
 
 - component name and inspected scope;
-- observed evidence by source type;
+- observed evidence by source type and content revision;
 - purpose, entry points, inputs, outputs;
 - data stores, external systems, triggers;
 - business rules and human/manual steps;
