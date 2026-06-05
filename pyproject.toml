@@ -1,0 +1,23 @@
+[project]
+name = "system-mapper"
+version = "0.1.0"
+description = "Evidence-backed living system maps for large codebases and documentation sets."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Douglas" }]
+dependencies = []
+
+[project.scripts]
+system-mapper = "system_mapper.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

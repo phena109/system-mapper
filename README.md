@@ -1,0 +1,95 @@
+# system-mapper
+
+`system-mapper` is a small CLI/toolkit for building **evidence-backed living system maps** from large codebases, documentation sets, configuration, and incoming code changes.
+
+It is designed around the approach discussed for weak / low-context AI:
+
+- inspect bounded slices, not the whole system at once;
+- treat code, docs, config, and operational artefacts as first-class evidence;
+- separate evidence from interpretation;
+- preserve unknowns, stale sources, and conflicts;
+- emit machine-readable summaries and edges that can be recursively merged;
+- update incrementally as new code/docs are merged.
+
+## Current MVP capabilities
+
+- `inventory`: classify files as code, document, config, or other, while skipping dependency/build directories.
+- `slice`: produce a bounded component summary with evidence, entry points, detected external/data-store/trigger edges, human/manual hints, risks, unknowns, and confidence scores.
+- `update`: compare a previous JSON summary with a git diff and report changed files, likely behaviour changes, edge changes, possibly stale docs, downstream areas to reinspect, and a changelog entry.
+
+This version uses deterministic heuristics only. It is intentionally suitable as a substrate for low-power AI agents: the CLI gathers stable evidence and produces structured context for an agent to review or merge upward.
+
+## Install / run
+
+```bash
+uv run system-mapper --help
+```
+
+Or directly:
+
+```bash
+uv run python -m system_mapper.cli --help
+```
+
+## Examples
+
+Inventory a repository:
+
+```bash
+uv run system-mapper inventory /path/to/repo --json > .system-map/inventory.json
+```
+
+Summarise a bounded slice from code + docs + config:
+
+```bash
+uv run system-mapper slice /path/to/repo \
+  src/billing.py docs/billing.md config/schedule.yml \
+  --component billing/export \
+  --json > .system-map/components/billing-export.json
+```
+
+Analyse a merge/change diff against an existing summary:
+
+```bash
+git diff origin/main...HEAD > /tmp/change.diff
+uv run system-mapper update .system-map/components/billing-export.json /tmp/change.diff --json
+```
+
+## Intended workflow
+
+```text
+1. Inventory code + documents + operational artefacts.
+2. Select bounded slices: file, folder, module, subsystem.
+3. Summarise each slice with evidence, unknowns, confidence, and graph edges.
+4. Let a low-context AI merge only lower-level summaries into higher-level maps.
+5. When code/docs change, analyse the diff against previous summaries.
+6. Reinspect changed slices and propagate stale/changed claims upward.
+7. Keep unresolved conflicts instead of smoothing them over.
+```
+
+## Summary contract
+
+Each component summary is intended to answer:
+
+- component name and inspected scope;
+- observed evidence by source type;
+- purpose, entry points, inputs, outputs;
+- data stores, external systems, triggers;
+- business rules and human/manual steps;
+- risks, unknowns, confidence;
+- suggested next files/components to inspect.
+
+## Development
+
+```bash
+uv run pytest -q
+```
+
+## Roadmap
+
+- richer language-specific parsers;
+- recursive summary merging;
+- conflict detection between code and documentation summaries;
+- GitHub Actions workflow for PR/diff-driven map updates;
+- optional LLM prompt generation for weak-agent review loops;
+- graph export formats such as Mermaid, DOT, and JSONL.
