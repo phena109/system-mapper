@@ -4,9 +4,27 @@
 
 1. **Self-reflection on this repository** — inspect current code, tests, CLI UX, docs, limitations, failure modes, and stale roadmap items.
 2. **Internet research** — check current public practice around code intelligence, repository maps, knowledge graphs, RAG, static analysis, CI, and low-context agent workflows.
-3. **Safe implementation** — choose one bounded improvement, implement it test-first when it changes behaviour, verify it, and push a review branch or safe direct-main docs update according to the operator prompt.
+3. **Safe implementation** — choose one bounded improvement, implement it test-first when it changes behaviour, verify it, and push to the authorised branch according to the operator prompt.
 
 This loop exists because the product is itself a living-system mapper: if it cannot continuously update its own understanding, it is not exercising the behaviour it promises.
+
+## Original-intention guardrail
+
+Rapid autonomous improvement is allowed only while preserving the original intention:
+
+> Help low-power / low-context AI describe and maintain understanding of large living systems by divide-and-conquer over code, documentation, configuration, human/manual process artefacts, evidence, unknowns, and incremental changes.
+
+Improvements should strengthen one or more of:
+
+- bounded slice mapping;
+- evidence-first summaries;
+- source/document freshness;
+- graph, dependency, interface, and data-flow maps;
+- conflict and unknown preservation;
+- low-context AI work packets;
+- living-change update loops.
+
+The project should not drift into a generic chatbot, generic RAG app, generic code search product, or unrelated developer assistant.
 
 ## Research signals from initial scan
 
@@ -64,12 +82,13 @@ A recurring autonomous run may:
 - inspect this repo and public sources;
 - create/update documentation;
 - add low-risk tests and deterministic CLI functionality;
-- commit and push a review branch;
+- commit and push directly to `main`/`master` after verification when the change preserves the original intention;
 - report proposed next work.
 
 A recurring autonomous run must not:
 
-- merge branches;
+- drift away from the original system-mapping purpose;
+- merge external branches;
 - delete repository history;
 - change licensing/legal claims;
 - add paid services or credentials;
@@ -78,7 +97,7 @@ A recurring autonomous run must not:
 
 ## Recommended cadence
 
-Weekly is enough while the project is small. Increase to every 2-3 days only after the repo has enough surface area for recurring runs to find useful work without churn.
+During early rapid improvement, the Hermes operator runs hourly. That cadence should stay safe by keeping each run bounded, test-verified, and no-drift checked. Once the project stabilises, reduce cadence to daily or weekly to avoid churn.
 
 ## Operator checklist
 
