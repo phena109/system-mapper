@@ -131,6 +131,43 @@ def test_cli_prompt_outputs_low_context_ai_contract():
     assert "Machine-readable edges" in result.stdout
 
 
+def test_cli_graph_emits_slice_edges_as_jsonl(tmp_path: Path):
+    write(
+        tmp_path / "src" / "billing.py",
+        """
+import requests
+DATABASE_TABLE = "invoices"
+
+def export_invoice(invoice_id):
+    requests.post("https://partner.example/export", json={"invoice_id": invoice_id})
+""".strip(),
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "system_mapper.cli",
+            "graph",
+            str(tmp_path),
+            "src/billing.py",
+            "--component",
+            "billing/export",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    records = [json.loads(line) for line in result.stdout.splitlines()]
+    assert any(record["kind"] == "external" and record["target"] == "https://partner.example/export" for record in records)
+    assert any(record["kind"] == "data_store" and record["target"] == "invoices" for record in records)
+    assert all(record["component"] == "billing/export" for record in records)
+    assert all(record["source"] == "src/billing.py" for record in records)
+
+
 def test_cli_prompt_update_mentions_living_system_changes():
     result = subprocess.run(
         [sys.executable, "-m", "system_mapper.cli", "prompt", "update", "--component", "billing/export"],

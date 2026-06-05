@@ -16,6 +16,7 @@ It is designed around the approach discussed for weak / low-context AI:
 - `inventory`: classify files as code, document, config, or other, while skipping dependency/build directories.
 - `slice`: produce a bounded component summary with evidence, entry points, detected external/data-store/trigger edges, human/manual hints, risks, unknowns, and confidence scores.
 - `update`: compare a previous JSON summary with a git diff and report changed files, likely behaviour changes, edge changes, possibly stale docs, downstream areas to reinspect, and a changelog entry.
+- `graph`: emit dependency/data-flow edges from a bounded slice as JSONL records for recursive merge, clustering, or downstream map tooling.
 - `prompt`: emit reusable low-context AI prompt contracts for slice analysis and living-system updates.
 
 This version uses deterministic heuristics only. It is intentionally suitable as a substrate for low-power AI agents: the CLI gathers stable evidence and produces structured context for an agent to review or merge upward.
@@ -54,6 +55,14 @@ Analyse a merge/change diff against an existing summary:
 ```bash
 git diff origin/main...HEAD > /tmp/change.diff
 uv run system-mapper update .system-map/components/billing-export.json /tmp/change.diff --json
+```
+
+Emit slice edges as JSONL for graph merge/clustering tools:
+
+```bash
+uv run system-mapper graph /path/to/repo \
+  src/billing.py docs/billing.md config/schedule.yml \
+  --component billing/export > .system-map/edges/billing-export.jsonl
 ```
 
 Emit a prompt contract for a low-context AI worker:

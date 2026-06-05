@@ -37,6 +37,23 @@ def cmd_update(args: argparse.Namespace) -> None:
     emit(update_summary_from_diff(previous, diff), args.json)
 
 
+def cmd_graph(args: argparse.Namespace) -> None:
+    summary = summarize_component(args.root, args.paths, args.component)
+    for edge in summary.edges:
+        print(
+            json.dumps(
+                {
+                    "component": summary.component,
+                    "kind": edge.kind,
+                    "source": edge.source,
+                    "target": edge.target,
+                    "confidence": edge.confidence,
+                },
+                sort_keys=True,
+            )
+        )
+
+
 def cmd_prompt(args: argparse.Namespace) -> None:
     print(build_prompt(args.kind, args.component))
 
@@ -62,6 +79,12 @@ def build_parser() -> argparse.ArgumentParser:
     up.add_argument("diff", help="Diff file path, or - for stdin")
     up.add_argument("--json", action="store_true")
     up.set_defaults(func=cmd_update)
+
+    graph = sub.add_parser("graph", help="Emit slice dependency/data-flow edges as JSONL records.")
+    graph.add_argument("root")
+    graph.add_argument("paths", nargs="+")
+    graph.add_argument("--component")
+    graph.set_defaults(func=cmd_graph)
 
     prompt = sub.add_parser("prompt", help="Emit reusable low-context AI prompts for system mapping.")
     prompt.add_argument("kind", choices=["slice", "update"])
