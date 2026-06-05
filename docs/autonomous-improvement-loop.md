@@ -68,6 +68,7 @@ The first research pass found these durable directions:
 
 2. **Bounded context packaging**
    - Generate small AI work packets: selected files, previous summary, edge neighbourhood, related docs, and exact output contract.
+   - Initial implementation: `system-mapper packet` emits a deterministic slice summary, prompt contract, edges, unknowns, and next actions as JSON for low-context worker handoff.
 
 3. **Dependency-aware traversal**
    - Suggest next files by edge fan-out, unknowns, and stale evidence rather than folder order.

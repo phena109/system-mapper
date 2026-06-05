@@ -17,6 +17,7 @@ It is designed around the approach discussed for weak / low-context AI:
 - `slice`: produce a bounded component summary with evidence, entry points, detected external/data-store/trigger edges, human/manual hints, risks, unknowns, and confidence scores.
 - `update`: compare a previous JSON summary with a git diff and report changed files, likely behaviour changes, edge changes, possibly stale docs, downstream areas to reinspect, and a changelog entry.
 - `graph`: emit dependency/data-flow edges from a bounded slice as JSONL records for recursive merge, clustering, or downstream map tooling.
+- `packet`: package a bounded slice summary, evidence, edges, unknowns, next actions, and the low-context AI prompt contract as JSON.
 - `prompt`: emit reusable low-context AI prompt contracts for slice analysis and living-system updates.
 
 This version uses deterministic heuristics only. It is intentionally suitable as a substrate for low-power AI agents: the CLI gathers stable evidence and produces structured context for an agent to review or merge upward.
@@ -63,6 +64,14 @@ Emit slice edges as JSONL for graph merge/clustering tools:
 uv run system-mapper graph /path/to/repo \
   src/billing.py docs/billing.md config/schedule.yml \
   --component billing/export > .system-map/edges/billing-export.jsonl
+```
+
+Package a bounded low-context AI work packet:
+
+```bash
+uv run system-mapper packet /path/to/repo \
+  src/billing.py docs/billing.md config/schedule.yml \
+  --component billing/export > .system-map/packets/billing-export.json
 ```
 
 Emit a prompt contract for a low-context AI worker:

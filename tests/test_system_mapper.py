@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from system_mapper.inventory import build_inventory
+from system_mapper.packet import build_work_packet
 from system_mapper.summarizer import summarize_component
 from system_mapper.update import update_summary_from_diff
 
@@ -168,6 +169,25 @@ def export_invoice(invoice_id):
     assert all(record["source"] == "src/billing.py" for record in records)
 
 
+def test_summary_does_not_treat_python_imports_as_data_stores(tmp_path: Path):
+    write(
+        tmp_path / "src" / "imports_only.py",
+        """
+from __future__ import annotations
+from pathlib import Path
+import json
+
+def main():
+    return Path('.')
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["src/imports_only.py"], component="imports-only")
+
+    data_store_targets = [edge.target for edge in summary.edges if edge.kind == "data_store"]
+    assert data_store_targets == []
+
+
 def test_cli_prompt_update_mentions_living_system_changes():
     result = subprocess.run(
         [sys.executable, "-m", "system_mapper.cli", "prompt", "update", "--component", "billing/export"],
@@ -181,3 +201,55 @@ def test_cli_prompt_update_mentions_living_system_changes():
     assert "This is a living system" in result.stdout
     assert "Identify affected components" in result.stdout
     assert "stale" in result.stdout.lower()
+
+
+def test_work_packet_packages_summary_prompt_edges_and_next_actions(tmp_path: Path):
+    write(
+        tmp_path / "src" / "billing.py",
+        """
+import requests
+DATABASE_TABLE = "invoices"
+
+def export_invoice(invoice_id):
+    requests.post("https://partner.example/export", json={"invoice_id": invoice_id})
+""".strip(),
+    )
+    write(tmp_path / "docs" / "billing.md", "# Billing\nInvoice exports may need manual retry.\n")
+
+    packet = build_work_packet(tmp_path, ["src/billing.py", "docs/billing.md"], component="billing/export")
+
+    assert packet["component"] == "billing/export"
+    assert packet["contract"] == "system-mapper.work-packet.v1"
+    assert packet["scope"] == ["src/billing.py", "docs/billing.md"]
+    assert "Analyse only the files" in packet["prompt"]
+    assert any(edge["kind"] == "external" and "partner.example" in edge["target"] for edge in packet["edge_records"])
+    assert any("Operational process" in unknown for unknown in packet["unknowns"])
+    assert packet["next_actions"][0].startswith("Inspect or answer unknown")
+
+
+def test_cli_packet_emits_bounded_low_context_json_contract(tmp_path: Path):
+    write(tmp_path / "src" / "app.py", "def main():\n    return 'ok'\n")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "system_mapper.cli",
+            "packet",
+            str(tmp_path),
+            "src/app.py",
+            "--component",
+            "app",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    packet = json.loads(result.stdout)
+    assert packet["contract"] == "system-mapper.work-packet.v1"
+    assert packet["component"] == "app"
+    assert packet["summary"]["scope"] == ["src/app.py"]
+    assert "Target component: app" in packet["prompt"]

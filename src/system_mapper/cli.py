@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from .inventory import build_inventory
+from .packet import build_work_packet
 from .prompts import build_prompt
 from .summarizer import summarize_component
 from .update import update_summary_from_diff
@@ -58,6 +59,10 @@ def cmd_prompt(args: argparse.Namespace) -> None:
     print(build_prompt(args.kind, args.component))
 
 
+def cmd_packet(args: argparse.Namespace) -> None:
+    print(json.dumps(build_work_packet(args.root, args.paths, args.component), indent=2, sort_keys=True))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="system-mapper", description="Build and maintain evidence-backed living system maps.")
     sub = parser.add_subparsers(required=True)
@@ -85,6 +90,12 @@ def build_parser() -> argparse.ArgumentParser:
     graph.add_argument("paths", nargs="+")
     graph.add_argument("--component")
     graph.set_defaults(func=cmd_graph)
+
+    packet = sub.add_parser("packet", help="Emit a bounded low-context AI work packet as JSON.")
+    packet.add_argument("root")
+    packet.add_argument("paths", nargs="+")
+    packet.add_argument("--component")
+    packet.set_defaults(func=cmd_packet)
 
     prompt = sub.add_parser("prompt", help="Emit reusable low-context AI prompts for system mapping.")
     prompt.add_argument("kind", choices=["slice", "update"])

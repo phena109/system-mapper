@@ -13,7 +13,8 @@ FUNC_RE = re.compile(
     r"|^\s*class\s+([A-Za-z_][\w]*)",
     re.M,
 )
-TABLE_RE = re.compile(r"(?:TABLE|table|from|join)\s*[=:]?\s*[\"']?([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)?)[\"']?", re.I)
+TABLE_ASSIGN_RE = re.compile(r"\b[A-Za-z_]*TABLE[A-Za-z_]*\s*=\s*[\"']([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)?)[\"']", re.I)
+SQL_TABLE_RE = re.compile(r"\b(?:from|join)\s+([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)?)", re.I)
 CRON_RE = re.compile(r"(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)")
 MANUAL_RE = re.compile(r"\b(manual|human|admin|operator|retry|runbook|ask|approval)\b", re.I)
 BUSINESS_RE = re.compile(r"\b(rule|must|cannot|should|policy|approval|required|limit|threshold)\b", re.I)
@@ -40,6 +41,19 @@ def _sentence_with(text: str, pattern: re.Pattern[str]) -> str:
         if pattern.search(line):
             return line.strip()[:240]
     return ""
+
+
+def _tables(text: str) -> list[str]:
+    found: list[str] = []
+    for table in TABLE_ASSIGN_RE.findall(text):
+        found.append(table)
+    for line in text.splitlines():
+        stripped = line.strip().lower()
+        if stripped.startswith(("from ", "import ", "from.")) or " import " in stripped:
+            continue
+        if any(keyword in stripped for keyword in ("select ", " update ", " delete ", " insert ", " join ")):
+            found.extend(SQL_TABLE_RE.findall(line))
+    return found
 
 
 def summarize_component(root: Path | str, paths: list[Path | str], component: str | None = None) -> ComponentSummary:
@@ -76,7 +90,7 @@ def summarize_component(root: Path | str, paths: list[Path | str], component: st
             edges.append(Edge("trigger", rel, "cron schedule", "medium"))
         for url in URL_RE.findall(text):
             edges.append(Edge("external", rel, url, "high" if kind == "code" else "medium"))
-        for table in TABLE_RE.findall(text):
+        for table in _tables(text):
             if table.lower() not in {"table", "from", "join", "def", "function"}:
                 edges.append(Edge("data_store", rel, table, "medium"))
         if kind == "config":
