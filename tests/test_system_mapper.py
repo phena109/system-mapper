@@ -240,6 +240,33 @@ class MapWorker:
     assert any("refresh_system_map" in ev.symbols for ev in summary.evidence)
 
 
+def test_summary_emits_internal_edges_for_javascript_and_typescript_relative_imports(tmp_path: Path):
+    write(tmp_path / "src" / "routes" / "helpers.ts", "export function normalizeRoute() { return 'ok' }\n")
+    write(tmp_path / "src" / "routes" / "shared" / "index.ts", "export const shared = true\n")
+    write(tmp_path / "src" / "routes" / "legacy.js", "module.exports = {}\n")
+    write(
+        tmp_path / "src" / "routes" / "app.ts",
+        """
+import { normalizeRoute } from './helpers'
+export { shared } from './shared'
+const legacy = require('./legacy')
+import express from 'express'
+
+export async function handler() {
+    return normalizeRoute()
+}
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["src/routes/app.ts"], component="routes/app")
+
+    internal_targets = {edge.target for edge in summary.edges if edge.kind == "internal"}
+    assert "src/routes/helpers.ts" in internal_targets
+    assert "src/routes/shared/index.ts" in internal_targets
+    assert "src/routes/legacy.js" in internal_targets
+    assert "express" not in internal_targets
+
+
 def test_cli_prompt_update_mentions_living_system_changes():
     result = subprocess.run(
         [sys.executable, "-m", "system_mapper.cli", "prompt", "update", "--component", "billing/export"],

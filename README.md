@@ -14,7 +14,7 @@ It is designed around the approach discussed for weak / low-context AI:
 ## Current MVP capabilities
 
 - `inventory`: classify files as code, document, config, or other, while skipping dependency/build directories.
-- `slice`: produce a bounded component summary with evidence, entry points, detected internal dependency, external/data-store/trigger edges, human/manual hints, risks, unknowns, and confidence scores.
+- `slice`: produce a bounded component summary with evidence, entry points, detected Python and JavaScript/TypeScript internal dependencies, external/data-store/trigger edges, human/manual hints, risks, unknowns, and confidence scores.
 - `update`: compare a previous JSON summary with a git diff and report changed files, likely behaviour changes, edge changes, possibly stale docs, downstream areas to reinspect, and a changelog entry.
 - `graph`: emit dependency/data-flow edges from a bounded slice as JSONL records for recursive merge, clustering, or downstream map tooling.
 - `packet`: package a bounded slice summary, evidence, edges, unknowns, next actions, and the low-context AI prompt contract as JSON.

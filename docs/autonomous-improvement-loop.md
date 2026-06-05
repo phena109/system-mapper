@@ -42,6 +42,7 @@ The first research pass found these durable directions:
 1. **Parser-backed extraction**
    - Initial Python import dependency extraction now uses the stdlib AST to emit repository-local `internal` edges for bounded slices.
    - Python entry-point extraction now uses the stdlib AST so async functions, classes, and methods are captured more reliably than regex-only scans.
+   - JavaScript/TypeScript bounded slices now emit repository-local `internal` edges for relative `import`, re-export, dynamic `import()`, and `require()` specifiers when they resolve to existing source files or index modules.
    - Continue adding optional Tree-sitter or AST-based extractors for Python/JS/TS.
    - Extract function calls, classes, route declarations, decorators, SQL/table references, and config keys with source spans.
 
