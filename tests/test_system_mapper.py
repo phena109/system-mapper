@@ -112,3 +112,35 @@ def test_cli_inventory_and_slice_emit_json(tmp_path: Path):
     payload = json.loads(result.stdout)
     assert payload["component"] == "app"
     assert payload["scope"] == ["src/app.py"]
+
+
+def test_cli_prompt_outputs_low_context_ai_contract():
+    result = subprocess.run(
+        [sys.executable, "-m", "system_mapper.cli", "prompt", "slice", "--component", "billing/export"],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    assert "Analyse only the files, summaries, and artefacts provided" in result.stdout
+    assert "billing/export" in result.stdout
+    assert "Code evidence" in result.stdout
+    assert "Do not assume documentation is current" in result.stdout
+    assert "Machine-readable edges" in result.stdout
+
+
+def test_cli_prompt_update_mentions_living_system_changes():
+    result = subprocess.run(
+        [sys.executable, "-m", "system_mapper.cli", "prompt", "update", "--component", "billing/export"],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    assert "This is a living system" in result.stdout
+    assert "Identify affected components" in result.stdout
+    assert "stale" in result.stdout.lower()

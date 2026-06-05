@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from .inventory import build_inventory
+from .prompts import build_prompt
 from .summarizer import summarize_component
 from .update import update_summary_from_diff
 
@@ -36,6 +37,10 @@ def cmd_update(args: argparse.Namespace) -> None:
     emit(update_summary_from_diff(previous, diff), args.json)
 
 
+def cmd_prompt(args: argparse.Namespace) -> None:
+    print(build_prompt(args.kind, args.component))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="system-mapper", description="Build and maintain evidence-backed living system maps.")
     sub = parser.add_subparsers(required=True)
@@ -57,6 +62,11 @@ def build_parser() -> argparse.ArgumentParser:
     up.add_argument("diff", help="Diff file path, or - for stdin")
     up.add_argument("--json", action="store_true")
     up.set_defaults(func=cmd_update)
+
+    prompt = sub.add_parser("prompt", help="Emit reusable low-context AI prompts for system mapping.")
+    prompt.add_argument("kind", choices=["slice", "update"])
+    prompt.add_argument("--component")
+    prompt.set_defaults(func=cmd_prompt)
     return parser
 
 
