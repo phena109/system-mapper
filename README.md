@@ -18,6 +18,7 @@ It is designed around the approach discussed for weak / low-context AI:
 - `update`: compare a previous JSON summary with a git diff and report changed files, likely behaviour changes, edge changes, possibly stale docs, downstream areas to reinspect, and a changelog entry.
 - `graph`: emit dependency/data-flow edges from a bounded slice as JSONL records for recursive merge, clustering, or downstream map tooling.
 - `packet`: package a bounded slice summary, evidence, edges, unknowns, next actions, and the low-context AI prompt contract as JSON.
+- `plan`: choose bounded next slices with a default 45,000-token limit, selectable ordering strategy, and planned output locations.
 - `prompt`: emit reusable low-context AI prompt contracts for slice analysis and living-system updates.
 
 This version uses deterministic heuristics only. It is intentionally suitable as a substrate for low-power AI agents: the CLI gathers stable evidence and produces structured context for an agent to review or merge upward.
@@ -73,6 +74,19 @@ uv run system-mapper packet /path/to/repo \
   src/billing.py docs/billing.md config/schedule.yml \
   --component billing/export > .system-map/packets/billing-export.json
 ```
+
+Plan next bounded slices from a local checkout, keeping each slice under the default 45,000 estimated tokens:
+
+```bash
+uv run system-mapper plan /path/to/repo --json > .system-map/slice-plan.json
+uv run system-mapper plan /path/to/repo \
+  --strategy chronological \
+  --output-layout 1-level \
+  --output-root .system-map \
+  --json
+```
+
+Strategy options are `breadth-first`, `depth-first`, and `chronological`; output layouts are `flat`, `1-level`, and `2-level`. Defaults are `breadth-first` and `2-level` so an initial map gets a broad system shape without dumping every artifact into one flat folder.
 
 Emit a prompt contract for a low-context AI worker:
 

@@ -9,6 +9,7 @@ import pytest
 
 from system_mapper.inventory import build_inventory
 from system_mapper.packet import build_work_packet
+from system_mapper.planner import DEFAULT_TOKEN_LIMIT, build_slice_plan
 from system_mapper.summarizer import summarize_component
 from system_mapper.update import update_summary_from_diff
 
@@ -332,3 +333,64 @@ def test_cli_packet_emits_bounded_low_context_json_contract(tmp_path: Path):
     assert packet["component"] == "app"
     assert packet["summary"]["scope"] == ["src/app.py"]
     assert "Target component: app" in packet["prompt"]
+
+
+def test_slice_plan_defaults_to_45000_tokens_breadth_first_and_two_level_outputs(tmp_path: Path):
+    write(tmp_path / "README.md", "# Repo\n")
+    write(tmp_path / "src" / "system_mapper" / "app.py", "def main():\n    return 'ok'\n")
+    write(tmp_path / "src" / "z_deep" / "module.py", "def z():\n    return 'z'\n")
+
+    plan = build_slice_plan(tmp_path)
+
+    assert plan.token_limit == DEFAULT_TOKEN_LIMIT == 45_000
+    assert plan.strategy == "breadth-first"
+    assert plan.output_layout == "2-level"
+    assert plan.slices[0].paths[0] == "README.md"
+    assert all(slice_.estimated_tokens <= 45_000 for slice_ in plan.slices)
+    assert "packets" in plan.slices[0].output_locations["packet"]
+    assert "components" in plan.slices[0].output_locations["summary"]
+    assert "edges" in plan.slices[0].output_locations["edges"]
+
+
+def test_slice_plan_splits_when_token_limit_is_exceeded(tmp_path: Path):
+    write(tmp_path / "src" / "a.py", "a" * 24)
+    write(tmp_path / "src" / "b.py", "b" * 24)
+
+    plan = build_slice_plan(tmp_path, token_limit=6, output_layout="flat")
+
+    assert [slice_.paths for slice_ in plan.slices] == [["src/a.py"], ["src/b.py"]]
+    assert all(slice_.estimated_tokens == 6 for slice_ in plan.slices)
+    assert plan.slices[0].output_locations["packet"] == ".system-map/packets/src-a.json"
+
+
+def test_cli_plan_emits_json_with_strategy_and_output_layout(tmp_path: Path):
+    write(tmp_path / "src" / "app.py", "def main():\n    return 'ok'\n")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "system_mapper.cli",
+            "plan",
+            str(tmp_path),
+            "--token-limit",
+            "45000",
+            "--strategy",
+            "depth-first",
+            "--output-layout",
+            "1-level",
+            "--json",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["token_limit"] == 45_000
+    assert payload["strategy"] == "depth-first"
+    assert payload["output_layout"] == "1-level"
+    assert payload["slices"][0]["paths"] == ["src/app.py"]
+    assert payload["slices"][0]["output_locations"]["packet"].endswith(".json")

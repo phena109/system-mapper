@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .inventory import build_inventory
 from .packet import build_work_packet
+from .planner import DEFAULT_TOKEN_LIMIT, build_slice_plan
 from .prompts import build_prompt
 from .summarizer import summarize_component
 from .update import update_summary_from_diff
@@ -63,6 +64,19 @@ def cmd_packet(args: argparse.Namespace) -> None:
     print(json.dumps(build_work_packet(args.root, args.paths, args.component), indent=2, sort_keys=True))
 
 
+def cmd_plan(args: argparse.Namespace) -> None:
+    emit(
+        build_slice_plan(
+            args.root,
+            strategy=args.strategy,
+            token_limit=args.token_limit,
+            output_root=args.output_root,
+            output_layout=args.output_layout,
+        ),
+        args.json,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="system-mapper", description="Build and maintain evidence-backed living system maps.")
     sub = parser.add_subparsers(required=True)
@@ -96,6 +110,30 @@ def build_parser() -> argparse.ArgumentParser:
     packet.add_argument("paths", nargs="+")
     packet.add_argument("--component")
     packet.set_defaults(func=cmd_packet)
+
+    plan = sub.add_parser("plan", help="Plan bounded next slices and output locations.")
+    plan.add_argument("root")
+    plan.add_argument(
+        "--strategy",
+        choices=["breadth-first", "depth-first", "chronological"],
+        default="breadth-first",
+        help="Next-slice ordering. Default: breadth-first for whole-system shape first.",
+    )
+    plan.add_argument(
+        "--token-limit",
+        type=int,
+        default=DEFAULT_TOKEN_LIMIT,
+        help="Maximum estimated tokens per planned slice. Default: 45000.",
+    )
+    plan.add_argument("--output-root", default=".system-map")
+    plan.add_argument(
+        "--output-layout",
+        choices=["flat", "1-level", "2-level"],
+        default="2-level",
+        help="Output path grouping. Default: 2-level to avoid one huge flat folder.",
+    )
+    plan.add_argument("--json", action="store_true")
+    plan.set_defaults(func=cmd_plan)
 
     prompt = sub.add_parser("prompt", help="Emit reusable low-context AI prompts for system mapping.")
     prompt.add_argument("kind", choices=["slice", "update"])
