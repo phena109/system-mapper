@@ -354,6 +354,31 @@ class MapBuilder:
     assert "return" not in call_targets
 
 
+def test_summary_emits_route_edges_for_python_web_decorators(tmp_path: Path):
+    write(
+        tmp_path / "src" / "api.py",
+        """
+from fastapi import APIRouter
+
+router = APIRouter()
+
+@router.get("/maps/{map_id}")
+def read_map(map_id: str):
+    return {"map_id": map_id}
+
+@app.post("/maps")
+def create_map():
+    return {}
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["src/api.py"], component="api")
+
+    route_edges = {(edge.target, edge.source_line, edge.confidence) for edge in summary.edges if edge.kind == "route"}
+    assert ("GET /maps/{map_id}", 5, "high") in route_edges
+    assert ("POST /maps", 9, "high") in route_edges
+
+
 def test_summary_emits_internal_edges_for_javascript_and_typescript_relative_imports(tmp_path: Path):
     write(tmp_path / "src" / "routes" / "helpers.ts", "export function normalizeRoute() { return 'ok' }\n")
     write(tmp_path / "src" / "routes" / "shared" / "index.ts", "export const shared = true\n")

@@ -24,6 +24,7 @@ JS_IMPORT_RE = re.compile(
 CRON_RE = re.compile(r"(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)")
 MANUAL_RE = re.compile(r"\b(manual|human|admin|operator|retry|runbook|ask|approval)\b", re.I)
 BUSINESS_RE = re.compile(r"\b(rule|must|cannot|should|policy|approval|required|limit|threshold)\b", re.I)
+HTTP_METHODS = {"get", "post", "put", "patch", "delete", "options", "head", "route"}
 
 
 def _safe_read(path: Path) -> str:
@@ -156,6 +157,46 @@ def _python_call_edges(path: Path, root: Path, text: str) -> list[Edge]:
     return targets
 
 
+def _literal_string(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _python_route_edges(path: Path, root: Path, text: str) -> list[Edge]:
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+
+    try:
+        rel = str(path.relative_to(root))
+    except ValueError:
+        rel = str(path)
+
+    routes: list[Edge] = []
+    seen: set[tuple[str, int | None]] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for decorator in node.decorator_list:
+            if not isinstance(decorator, ast.Call) or not isinstance(decorator.func, ast.Attribute):
+                continue
+            method = decorator.func.attr.lower()
+            if method not in HTTP_METHODS or not decorator.args:
+                continue
+            route_path = _literal_string(decorator.args[0])
+            if not route_path:
+                continue
+            target = route_path if method == "route" else f"{method.upper()} {route_path}"
+            key = (target, getattr(decorator, "lineno", None))
+            if key in seen:
+                continue
+            routes.append(Edge("route", rel, target, "high", getattr(decorator, "lineno", None)))
+            seen.add(key)
+    return routes
+
+
 def _python_internal_dependencies(root: Path, path: Path, text: str) -> list[str]:
     try:
         tree = ast.parse(text)
@@ -267,6 +308,7 @@ def summarize_component(root: Path | str, paths: list[Path | str], component: st
                 edges.append(Edge("data_store", rel, table, "medium", line_number))
         if kind == "code" and path.suffix == ".py":
             edges.extend(_python_call_edges(path, root, text))
+            edges.extend(_python_route_edges(path, root, text))
             for target in _python_internal_dependencies(root, path, text):
                 edges.append(Edge("internal", rel, target, "high"))
         if kind == "code" and path.suffix.lower() in {".js", ".jsx", ".ts", ".tsx"}:
