@@ -68,6 +68,7 @@ The first research pass found these durable directions:
    - Given a git diff, map changed files to affected components.
    - Re-run slice summaries for only affected areas.
    - Produce changelog entries and stale-source warnings.
+   - Initial interface-change support: `update` now detects added Python FastAPI/Flask-style route decorators in diffs and reports route edge changes so low-context workers can reinspect API-facing maps.
 
 ### Efficiency
 

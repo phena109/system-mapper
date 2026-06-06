@@ -100,6 +100,34 @@ diff --git a/docs/billing.md b/docs/billing.md
     assert any("external" in edge for edge in update.edge_changes)
 
 
+def test_update_from_diff_reports_added_python_route_interfaces():
+    previous = {
+        "component": "maps/api",
+        "edges": [{"kind": "route", "source": "src/api.py", "target": "GET /maps/{map_id}"}],
+        "last_updated_from": ["src/api.py", "docs/api.md"],
+    }
+    diff = """
+diff --git a/src/api.py b/src/api.py
+@@
+ @router.get("/maps/{map_id}")
+ def read_map(map_id: str):
+     return {"map_id": map_id}
++
++@router.post("/maps")
++async def create_map():
++    return {}
+"""
+
+    update = update_summary_from_diff(previous, diff)
+
+    assert "src/api.py" in update.changed_files
+    assert "New route interface added: POST /maps" in update.interface_changes
+    assert "route edge may now target POST /maps" in update.edge_changes
+    assert not any("no obvious behaviour" in change for change in update.behaviour_changes)
+    assert "New route interface added: POST /maps" in update.changelog_entry
+    assert any("docs/api.md may be stale after code changes" in stale for stale in update.possibly_stale_sources)
+
+
 def test_cli_inventory_and_slice_emit_json(tmp_path: Path):
     write(tmp_path / "src" / "app.py", "def main():\n    return 'ok'\n")
     result = subprocess.run(

@@ -8,7 +8,16 @@ from .models import ChangeUpdate
 DIFF_FILE_RE = re.compile(r"^diff --git a/(.*?) b/(.*?)$", re.M)
 ADDED_URL_RE = re.compile(r"^\+.*?(https?://[^\s'\"),}]+)", re.M)
 REMOVED_URL_RE = re.compile(r"^-.*?(https?://[^\s'\"),}]+)", re.M)
-ADDED_SYMBOL_RE = re.compile(r"^\+\s*(?:def|function|class)\s+([A-Za-z_][\w]*)", re.M)
+ADDED_SYMBOL_RE = re.compile(r"^\+\s*(?:async\s+def|def|function|class)\s+([A-Za-z_][\w]*)", re.M)
+ADDED_PY_ROUTE_RE = re.compile(
+    r"^\+\s*@[^\s.()]+\.(get|post|put|patch|delete|options|head)\(\s*[\"']([^\"']+)[\"']",
+    re.M | re.I,
+)
+ADDED_PY_ROUTE_METHODS_RE = re.compile(
+    r"^\+\s*@[^\s.()]+\.route\(\s*[\"']([^\"']+)[\"'][^\n]*methods\s*=\s*\[([^\]]*)\]",
+    re.M | re.I,
+)
+ROUTE_METHOD_VALUE_RE = re.compile(r"[\"']([A-Za-z]+)[\"']")
 
 
 def update_summary_from_diff(previous: dict[str, Any], diff: str) -> ChangeUpdate:
@@ -21,6 +30,10 @@ def update_summary_from_diff(previous: dict[str, Any], diff: str) -> ChangeUpdat
     added_urls = ADDED_URL_RE.findall(diff)
     removed_urls = REMOVED_URL_RE.findall(diff)
     added_symbols = ADDED_SYMBOL_RE.findall(diff)
+    added_routes = [(method.upper(), path) for method, path in ADDED_PY_ROUTE_RE.findall(diff)]
+    for path, method_values in ADDED_PY_ROUTE_METHODS_RE.findall(diff):
+        methods = [method.upper() for method in ROUTE_METHOD_VALUE_RE.findall(method_values)] or ["GET"]
+        added_routes.extend((method, path) for method in methods)
 
     behaviour_changes: list[str] = []
     interface_changes: list[str] = []
@@ -34,6 +47,14 @@ def update_summary_from_diff(previous: dict[str, Any], diff: str) -> ChangeUpdat
         edge_changes.append(f"external edge may no longer target {url}")
     for symbol in added_symbols:
         interface_changes.append(f"New code entry point or type added: {symbol}")
+    seen_routes: set[str] = set()
+    for method, path in added_routes:
+        target = f"{method} {path}"
+        if target in seen_routes:
+            continue
+        interface_changes.append(f"New route interface added: {target}")
+        edge_changes.append(f"route edge may now target {target}")
+        seen_routes.add(target)
 
     docs_changed = [path for path in changed_files if path.lower().endswith((".md", ".rst", ".txt", ".adoc"))]
     code_changed = [path for path in changed_files if path not in docs_changed]
@@ -48,7 +69,7 @@ def update_summary_from_diff(previous: dict[str, Any], diff: str) -> ChangeUpdat
         if code_changed or added_urls or removed_urls:
             possibly_stale_sources.append(f"{doc} should be checked against implemented behaviour")
 
-    if not behaviour_changes and changed_files:
+    if not behaviour_changes and changed_files and not (interface_changes or edge_changes):
         behaviour_changes.append("Files changed; no obvious behaviour change detected by heuristic diff scan")
 
     downstream = []
@@ -57,7 +78,8 @@ def update_summary_from_diff(previous: dict[str, Any], diff: str) -> ChangeUpdat
             downstream.append(str(edge["target"]))
 
     unknowns = ["Heuristic diff analysis cannot prove runtime behaviour; re-run component slice summaries for changed files"]
-    changelog_entry = f"{component}: changed {len(changed_files)} file(s); " + "; ".join(behaviour_changes[:3])
+    changelog_details = behaviour_changes[:3] or interface_changes[:3] or edge_changes[:3] or ["No heuristic changes detected"]
+    changelog_entry = f"{component}: changed {len(changed_files)} file(s); " + "; ".join(changelog_details)
     return ChangeUpdate(
         component,
         changed_files,
