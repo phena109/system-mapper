@@ -21,6 +21,7 @@ class PlannedSlice:
     paths: list[str]
     estimated_tokens: int
     output_locations: dict[str, str]
+    rationale: str
 
 
 @dataclass
@@ -118,6 +119,27 @@ def _locations(output_root: str, layout: OutputLayout, component: str) -> dict[s
     }
 
 
+def _slice_rationale(root: Path, paths: list[str], strategy: SliceStrategy, estimated_tokens: int) -> str:
+    """Explain why a planned slice is useful for a low-context worker."""
+    parts = [f"strategy={strategy}", f"estimated_tokens={estimated_tokens}"]
+    if strategy == "dependency-aware":
+        summary_paths: list[Path | str] = list(paths)
+        summary = summarize_component(root, summary_paths, component=_component_for(paths))
+        edge_kinds = sorted({edge.kind for edge in summary.edges})
+        parts.append(f"edge_count={len(summary.edges)}")
+        if edge_kinds:
+            parts.append("edge_kinds=" + ",".join(edge_kinds))
+        if summary.unknowns:
+            parts.append(f"unknown_count={len(summary.unknowns)}")
+    elif strategy == "breadth-first":
+        parts.append("reason=shallow system shape before deeper inspection")
+    elif strategy == "depth-first":
+        parts.append("reason=stable path order for focused folder descent")
+    elif strategy == "chronological":
+        parts.append("reason=recently changed evidence first")
+    return "; ".join(parts)
+
+
 def build_slice_plan(
     root: Path | str,
     strategy: SliceStrategy = "breadth-first",
@@ -142,6 +164,7 @@ def build_slice_plan(
                 paths=current_paths,
                 estimated_tokens=current_tokens,
                 output_locations=_locations(output_root_str, output_layout, component),
+                rationale=_slice_rationale(root_path, current_paths, strategy, current_tokens),
             )
         )
         current_paths = []

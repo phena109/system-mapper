@@ -406,6 +406,9 @@ def run_mapping():
 
     assert plan.strategy == "dependency-aware"
     assert plan.slices[0].paths == ["src/orchestrator.py"]
+    assert "edge_count=2" in plan.slices[0].rationale
+    assert "internal" in plan.slices[0].rationale
+    assert "data_store" in plan.slices[0].rationale
 
 
 def test_cli_plan_emits_json_with_strategy_and_output_layout(tmp_path: Path):

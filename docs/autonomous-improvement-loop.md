@@ -77,6 +77,7 @@ The first research pass found these durable directions:
 
 3. **Dependency-aware traversal**
    - Initial implementation: `system-mapper plan --strategy dependency-aware` prioritises edge-rich files from deterministic slice summaries before quieter supporting artefacts.
+   - Planned slices now include a `rationale` field that records strategy, estimated tokens, and, for dependency-aware plans, edge/unknown density so low-context workers can understand why the slice was selected.
    - Continue suggesting next files by edge fan-out, unknowns, and stale evidence rather than folder order.
 
 4. **CI/local smoke checks**
