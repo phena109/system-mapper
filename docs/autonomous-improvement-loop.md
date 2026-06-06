@@ -52,6 +52,7 @@ The first research pass found these durable directions:
    - Initial edge source spans: external URL, data-store, cron-trigger, Python call, and Python/JavaScript/TypeScript internal dependency edges now carry deterministic `source_line` citations where detected so low-context workers can jump from map edges back to evidence.
    - Python web-route decorators such as FastAPI/Flask-style `@router.get("/path")`, `@app.post("/path")`, and Flask-style `@app.route("/path", methods=[...])` now emit high-confidence `route` edges with source-line citations and HTTP methods, improving interface maps for API slices.
    - JavaScript/TypeScript Express-style route registrations such as `router.get('/maps/:mapId', handler)`, `app.post('/maps', handler)`, and `router.route('/maps/:mapId').delete(handler)` now emit deterministic `route` edges with source-line citations so Node/Express API slices expose interface maps too.
+   - PHP-first C-like support now extracts PHP classes/functions/methods, PHP include/require internal dependency edges, PHP route-style calls, generic C-like call edges, and C/C++ quoted `#include` internal edges. Slice ordering gives PHP first priority among C-like languages because early target use cases are PHP-heavy.
 
 2. **Graph/community layer**
    - Store edges as JSONL.
@@ -91,6 +92,9 @@ The first research pass found these durable directions:
 
 4. **CI/local smoke checks**
    - Keep deterministic CLI checks cheap so scheduled runs can execute often.
+
+5. **Minimal repeatable runner**
+   - Initial implementation: `system-mapper next` writes the next missing packet, component summary, and edge JSONL artifact under `.system-map/`, then returns `no_change` once all planned slices already have artifacts. This gives Hermes cron or a shell loop a tiny safe primitive that advances map artifacts without embedding scheduling or LLM calls in the package.
 
 ## Scheduled operator boundaries
 

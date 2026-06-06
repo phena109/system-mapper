@@ -10,6 +10,7 @@ import pytest
 from system_mapper.inventory import build_inventory
 from system_mapper.packet import build_work_packet
 from system_mapper.planner import DEFAULT_TOKEN_LIMIT, build_slice_plan
+from system_mapper.runner import run_next_slice
 from system_mapper.summarizer import summarize_component
 from system_mapper.update import update_summary_from_diff
 
@@ -529,6 +530,41 @@ class MapBuilder {
     assert "src/routes/app.ts:return" not in call_edges
 
 
+def test_summary_emits_php_symbols_calls_routes_and_internal_edges(tmp_path: Path):
+    write(tmp_path / "src" / "Auth" / "Token.php", "<?php\nfunction issueToken() { return 'token'; }\n")
+    write(
+        tmp_path / "src" / "login.php",
+        """
+<?php
+require_once __DIR__ . '/Auth/Token.php';
+
+class LoginController {
+    public function submitLogin() {
+        Route::post('/login', [$this, 'submitLogin']);
+        return issueToken();
+    }
+}
+
+function normalizeEmail($email) {
+    return strtolower($email);
+}
+
+normalizeEmail('USER@example.com');
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["src/login.php"], component="login")
+
+    assert "src/login.php:LoginController" in summary.entry_points
+    assert "src/login.php:submitLogin" in summary.entry_points
+    assert "src/login.php:normalizeEmail" in summary.entry_points
+    edges = {(edge.kind, edge.target, edge.source_line) for edge in summary.edges}
+    assert ("internal", "src/Auth/Token.php", 2) in edges
+    assert ("route", "POST /login", 6) in edges
+    assert ("call", "src/login.php:issueToken", 7) in edges
+    assert ("call", "src/login.php:normalizeEmail", 15) in edges
+
+
 def test_summary_does_not_emit_javascript_call_edges_for_method_declarations(tmp_path: Path):
     write(
         tmp_path / "src" / "routes" / "builder.ts",
@@ -717,6 +753,38 @@ def run_mapping():
     assert "edge_count=2" in plan.slices[0].rationale
     assert "internal" in plan.slices[0].rationale
     assert "data_store" in plan.slices[0].rationale
+
+
+def test_slice_plan_orders_php_first_among_c_like_languages(tmp_path: Path):
+    write(tmp_path / "src" / "login.php", "<?php\nfunction login() {}\n")
+    write(tmp_path / "src" / "auth.c", "void auth() {}\n")
+    write(tmp_path / "src" / "Auth.java", "class Auth {}\n")
+    write(tmp_path / "src" / "server.go", "package main\nfunc main() {}\n")
+
+    plan = build_slice_plan(tmp_path, token_limit=1, output_layout="flat")
+
+    assert [slice_.paths[0] for slice_ in plan.slices][:4] == [
+        "src/login.php",
+        "src/auth.c",
+        "src/Auth.java",
+        "src/server.go",
+    ]
+
+
+def test_run_next_slice_writes_artifacts_and_then_noops_when_all_slices_exist(tmp_path: Path):
+    write(tmp_path / "src" / "login.php", "<?php\nfunction login() {}\n")
+
+    first = run_next_slice(tmp_path, token_limit=45_000, output_layout="flat")
+
+    assert first["outcome"] == "advanced"
+    assert first["slice"]["paths"] == ["src/login.php"]
+    assert (tmp_path / ".system-map" / "components" / "src-login.json").exists()
+    assert (tmp_path / ".system-map" / "edges" / "src-login.jsonl").exists()
+    assert (tmp_path / ".system-map" / "packets" / "src-login.json").exists()
+
+    second = run_next_slice(tmp_path, token_limit=45_000, output_layout="flat")
+    assert second["outcome"] == "no_change"
+    assert second["reason"] == "all planned slices already have packet, summary, and edge artifacts"
 
 
 def test_cli_plan_emits_json_with_strategy_and_output_layout(tmp_path: Path):

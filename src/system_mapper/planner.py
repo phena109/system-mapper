@@ -14,6 +14,19 @@ CHARS_PER_TOKEN_ESTIMATE = 4
 SliceStrategy = Literal["breadth-first", "depth-first", "chronological", "dependency-aware"]
 OutputLayout = Literal["flat", "1-level", "2-level"]
 
+LANGUAGE_PRIORITY = {
+    ".php": 0,
+    ".c": 1,
+    ".h": 2,
+    ".cpp": 3,
+    ".hpp": 4,
+    ".cc": 5,
+    ".cxx": 6,
+    ".java": 7,
+    ".cs": 8,
+    ".go": 9,
+}
+
 
 @dataclass
 class PlannedSlice:
@@ -69,6 +82,10 @@ def _commit_timestamps(root: Path, paths: list[str]) -> dict[str, int]:
     return timestamps
 
 
+def _language_priority(path: str) -> int:
+    return LANGUAGE_PRIORITY.get(Path(path).suffix.lower(), 100)
+
+
 def _ordered_items(root: Path, strategy: SliceStrategy):
     inventory = build_inventory(root)
     candidates = [item for item in inventory.items if item.kind in {"code", "document", "config"}]
@@ -77,14 +94,14 @@ def _ordered_items(root: Path, strategy: SliceStrategy):
         for item in candidates:
             summary = summarize_component(root, [item.path], component=Path(item.path).with_suffix("").as_posix())
             edge_counts[item.path] = len(summary.edges)
-        return sorted(candidates, key=lambda item: (-edge_counts.get(item.path, 0), len(Path(item.path).parts), item.path))
+        return sorted(candidates, key=lambda item: (-edge_counts.get(item.path, 0), len(Path(item.path).parts), _language_priority(item.path), item.path))
     if strategy == "depth-first":
-        return sorted(candidates, key=lambda item: item.path)
+        return sorted(candidates, key=lambda item: (_language_priority(item.path), item.path))
     if strategy == "chronological":
         timestamps = _commit_timestamps(root, [item.path for item in candidates])
-        return sorted(candidates, key=lambda item: (-timestamps.get(item.path, 0), item.path))
+        return sorted(candidates, key=lambda item: (-timestamps.get(item.path, 0), _language_priority(item.path), item.path))
     # Breadth first is the default because it gets a whole-system shape before digging deep.
-    return sorted(candidates, key=lambda item: (len(Path(item.path).parts), item.path))
+    return sorted(candidates, key=lambda item: (len(Path(item.path).parts), _language_priority(item.path), item.path))
 
 
 def _component_for(paths: list[str]) -> str:

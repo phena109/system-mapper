@@ -15,6 +15,7 @@ SKIP_DIRS = {
     "__pycache__",
     ".cache",
     ".pytest_cache",
+    ".system-map",
     "dist",
     "build",
     ".next",

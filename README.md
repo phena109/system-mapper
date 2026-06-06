@@ -14,11 +14,12 @@ It is designed around the approach discussed for weak / low-context AI:
 ## Current MVP capabilities
 
 - `inventory`: classify files as code, document, config, or other, while skipping dependency/build directories.
-- `slice`: produce a bounded component summary with evidence, entry points, detected Python call edges, Python web-route decorator edges, JavaScript/TypeScript exported function/class/arrow-function entry points, Python and JavaScript/TypeScript internal dependencies, JavaScript/TypeScript local call edges, JavaScript/TypeScript Express-style route edges, external/data-store/trigger edges, human/manual hints, risks, unknowns, and confidence scores.
+- `slice`: produce a bounded component summary with evidence, entry points, detected Python call edges, Python web-route decorator edges, JavaScript/TypeScript exported function/class/arrow-function entry points, Python and JavaScript/TypeScript internal dependencies, PHP and C-like symbols/calls/includes, PHP route edges, external/data-store/trigger edges, human/manual hints, risks, unknowns, and confidence scores.
 - `update`: compare a previous JSON summary with a git diff and report changed files, likely behaviour changes, added Python route interfaces, edge changes, possibly stale docs, downstream areas to reinspect, and a changelog entry.
 - `graph`: emit dependency/data-flow edges from a bounded slice as JSONL records (including source line citations when detected) for recursive merge, clustering, or downstream map tooling, or as Mermaid / Graphviz DOT diagrams for quick visual review.
 - `packet`: package a bounded slice summary, evidence, edges, unknowns, next actions, and the low-context AI prompt contract as JSON.
 - `plan`: choose bounded next slices with a default 45,000-token limit, selectable ordering strategy, planned output locations, and a rationale for why each slice is useful for a low-context worker.
+- `next`: write the next missing packet, summary, and edge artifacts so a minimal cron loop can safely advance until it reaches `no_change`.
 - `prompt`: emit reusable low-context AI prompt contracts for slice analysis and living-system updates.
 
 This version uses deterministic heuristics only. It is intentionally suitable as a substrate for low-power AI agents: the CLI gathers stable evidence and produces structured context for an agent to review or merge upward.
@@ -103,6 +104,14 @@ uv run system-mapper plan /path/to/repo \
 ```
 
 Strategy options are `breadth-first`, `depth-first`, `chronological`, and `dependency-aware`; output layouts are `flat`, `1-level`, and `2-level`. Defaults are `breadth-first` and `2-level` so an initial map gets a broad system shape without dumping every artifact into one flat folder. Use `dependency-aware` when a follow-up worker should prioritise edge-rich files with internal dependencies, external systems, data stores, or triggers before quieter supporting artefacts. Each planned slice includes a short machine-readable `rationale` so a low-context worker can see whether it was selected for breadth, recency, path order, or edge/unknown density.
+
+Advance one missing slice artifact set for a very small repeatable loop:
+
+```bash
+uv run system-mapper next /path/to/repo --output-layout flat
+```
+
+Repeated `next` calls write the next missing packet, summary, and JSONL edge file under `.system-map/`. Once every planned slice has artifacts, the command returns `outcome: no_change` instead of re-emitting the same work forever.
 
 Emit a prompt contract for a low-context AI worker:
 

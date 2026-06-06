@@ -32,6 +32,23 @@ JS_ROUTE_CHAIN_RE = re.compile(
     r"\b(?:app|router)\s*\.\s*route\s*\(\s*[\"']([^\"']+)[\"']\s*\)\s*\.\s*(get|post|put|patch|delete|options|head)\s*\(",
     re.I,
 )
+C_LIKE_EXTS = {".php", ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".java", ".cs", ".go"}
+PHP_SYMBOL_RE = re.compile(
+    r"^\s*(?:abstract\s+|final\s+)?(?:class|interface|trait)\s+([A-Za-z_][\w]*)"
+    r"|^\s*(?:(?:public|protected|private|static|abstract|final)\s+)*function\s+([A-Za-z_][\w]*)\s*\(",
+    re.M,
+)
+C_LIKE_SYMBOL_RE = re.compile(
+    r"^\s*(?:public|private|protected|static|final|abstract|async|extern|inline|virtual|const|unsigned|signed|long|short|struct\s+|enum\s+|class\s+)*"
+    r"(?:[A-Za-z_][\w:<>,*&\[\]\s]+\s+)+([A-Za-z_][\w]*)\s*\([^;{}]*\)\s*(?:\{|=>)"
+    r"|^\s*(?:public\s+)?(?:class|interface|struct|enum)\s+([A-Za-z_][\w]*)",
+    re.M,
+)
+C_LIKE_CALL_RE = re.compile(r"(?:\bnew\s+|::\s*|->\s*|\.\s*)?([A-Za-z_][\w]*)\s*\(")
+PHP_INCLUDE_RE = re.compile(r"\b(?:require|require_once|include|include_once)\b\s*(?:\(?\s*)?(.+?);", re.I)
+STRING_RE = re.compile(r"[\"']([^\"']+)[\"']")
+PHP_ROUTE_RE = re.compile(r"\b(?:Route|router|app)\s*(?:::|->)\s*(get|post|put|patch|delete|options|head)\s*\(\s*[\"']([^\"']+)[\"']", re.I)
+C_INCLUDE_RE = re.compile(r"^\s*#\s*include\s+[\"<]([^\">]+)[\">]", re.M)
 CRON_RE = re.compile(r"(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)")
 MANUAL_RE = re.compile(r"\b(manual|human|admin|operator|retry|runbook|ask|approval)\b", re.I)
 BUSINESS_RE = re.compile(r"\b(rule|must|cannot|should|policy|approval|required|limit|threshold)\b", re.I)
@@ -54,6 +71,16 @@ def _symbols(text: str) -> list[str]:
     for match in FUNC_RE.finditer(text):
         symbol = next((g for g in match.groups() if g), None)
         if symbol:
+            found.append(symbol)
+    return found[:20]
+
+
+def _c_like_symbols(text: str, suffix: str) -> list[str]:
+    pattern = PHP_SYMBOL_RE if suffix == ".php" else C_LIKE_SYMBOL_RE
+    found: list[str] = []
+    for match in pattern.finditer(text):
+        symbol = next((g for g in match.groups() if g), None)
+        if symbol and symbol not in found:
             found.append(symbol)
     return found[:20]
 
@@ -352,6 +379,112 @@ def _javascript_route_edges(path: Path, root: Path, text: str) -> list[Edge]:
     return routes
 
 
+def _resolve_relative_candidate(root: Path, path: Path, specifier: str, suffixes: tuple[str, ...]) -> str | None:
+    base = (path.parent / specifier).resolve()
+    candidates: list[Path] = [base] if base.suffix else []
+    if not candidates:
+        candidates.extend(base.with_suffix(suffix) for suffix in suffixes)
+        candidates.extend(base / f"index{suffix}" for suffix in suffixes)
+    for candidate in candidates:
+        if candidate.is_file() and candidate.is_relative_to(root):
+            return str(candidate.relative_to(root))
+    return None
+
+
+def _php_include_specifier(expression: str) -> str | None:
+    strings = STRING_RE.findall(expression)
+    if not strings:
+        return None
+    # Handles common forms like __DIR__ . '/Auth/Token.php' by using the
+    # include path fragment rather than the __DIR__ sentinel itself.
+    specifier = strings[-1]
+    if "__DIR__" in expression:
+        specifier = specifier.lstrip("/")
+    return specifier
+
+
+def _c_like_internal_dependencies(root: Path, path: Path, text: str) -> list[tuple[str, int | None]]:
+    suffix = path.suffix.lower()
+    targets: list[tuple[str, int | None]] = []
+    seen: set[str] = set()
+
+    def add(target: str | None, line_number: int | None) -> None:
+        if target and target not in seen:
+            targets.append((target, line_number))
+            seen.add(target)
+
+    if suffix == ".php":
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            for expression in PHP_INCLUDE_RE.findall(line):
+                specifier = _php_include_specifier(expression)
+                if specifier:
+                    add(_resolve_relative_candidate(root, path, specifier, (".php",)), line_number)
+        return targets
+
+    if suffix in {".c", ".h", ".cpp", ".hpp", ".cc", ".cxx"}:
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            for specifier in C_INCLUDE_RE.findall(line):
+                add(_resolve_relative_candidate(root, path, specifier, (".h", ".hpp", ".c", ".cpp", ".cc", ".cxx")), line_number)
+    return targets
+
+
+def _c_like_call_edges(path: Path, root: Path, text: str) -> list[Edge]:
+    try:
+        rel = str(path.relative_to(root))
+    except ValueError:
+        rel = str(path)
+    targets: list[Edge] = []
+    seen: set[tuple[str, int]] = set()
+    skip_names = {
+        "if",
+        "for",
+        "while",
+        "switch",
+        "catch",
+        "return",
+        "function",
+        "class",
+        "include",
+        "include_once",
+        "require",
+        "require_once",
+        "strtolower",
+        "array",
+        "echo",
+    }
+    declaration_prefixes = ("function ", "public function ", "protected function ", "private function ", "class ")
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        stripped = line.strip()
+        if stripped.startswith(declaration_prefixes) or stripped.startswith("#include"):
+            continue
+        for name in C_LIKE_CALL_RE.findall(line):
+            if name in skip_names:
+                continue
+            key = (name, line_number)
+            if key in seen:
+                continue
+            targets.append(Edge("call", rel, f"{rel}:{name}", "medium", line_number))
+            seen.add(key)
+    return targets
+
+
+def _php_route_edges(path: Path, root: Path, text: str) -> list[Edge]:
+    try:
+        rel = str(path.relative_to(root))
+    except ValueError:
+        rel = str(path)
+    routes: list[Edge] = []
+    seen: set[tuple[str, int]] = set()
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        for method, route_path in PHP_ROUTE_RE.findall(line):
+            target = f"{method.upper()} {route_path}"
+            key = (target, line_number)
+            if key not in seen:
+                routes.append(Edge("route", rel, target, "medium", line_number))
+                seen.add(key)
+    return routes
+
+
 def summarize_component(root: Path | str, paths: list[Path | str], component: str | None = None) -> ComponentSummary:
     root = Path(root).resolve()
     resolved = [(Path(p) if Path(p).is_absolute() else root / str(p)).resolve() for p in paths]
@@ -372,6 +505,8 @@ def summarize_component(root: Path | str, paths: list[Path | str], component: st
         kind, _language = classify(path)
         if kind == "code" and path.suffix == ".py":
             symbols = _python_symbols(text)
+        elif kind == "code" and path.suffix.lower() in C_LIKE_EXTS:
+            symbols = _c_like_symbols(text, path.suffix.lower())
         else:
             symbols = _symbols(text) if kind == "code" else []
         note_parts: list[str] = []
@@ -402,6 +537,12 @@ def summarize_component(root: Path | str, paths: list[Path | str], component: st
             edges.extend(_javascript_call_edges(path, root, text))
             edges.extend(_javascript_route_edges(path, root, text))
             for target, line_number in _javascript_internal_dependencies(root, path, text):
+                edges.append(Edge("internal", rel, target, "high", line_number))
+        if kind == "code" and path.suffix.lower() in C_LIKE_EXTS:
+            edges.extend(_c_like_call_edges(path, root, text))
+            if path.suffix.lower() == ".php":
+                edges.extend(_php_route_edges(path, root, text))
+            for target, line_number in _c_like_internal_dependencies(root, path, text):
                 edges.append(Edge("internal", rel, target, "high", line_number))
         if kind == "config":
             inputs.append(f"configuration: {rel}")

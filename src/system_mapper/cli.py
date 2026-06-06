@@ -10,6 +10,7 @@ from .inventory import build_inventory
 from .packet import build_work_packet
 from .planner import DEFAULT_TOKEN_LIMIT, build_slice_plan
 from .prompts import build_prompt
+from .runner import run_next_slice
 from .summarizer import summarize_component
 from .update import update_summary_from_diff
 
@@ -85,6 +86,19 @@ def cmd_plan(args: argparse.Namespace) -> None:
     )
 
 
+def cmd_next(args: argparse.Namespace) -> None:
+    emit(
+        run_next_slice(
+            args.root,
+            strategy=args.strategy,
+            token_limit=args.token_limit,
+            output_root=args.output_root,
+            output_layout=args.output_layout,
+        ),
+        True,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="system-mapper", description="Build and maintain evidence-backed living system maps.")
     sub = parser.add_subparsers(required=True)
@@ -148,6 +162,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plan.add_argument("--json", action="store_true")
     plan.set_defaults(func=cmd_plan)
+
+    nxt = sub.add_parser("next", help="Write the next missing packet, summary, and edge artifacts for a repeatable run loop.")
+    nxt.add_argument("root")
+    nxt.add_argument(
+        "--strategy",
+        choices=["breadth-first", "depth-first", "chronological", "dependency-aware"],
+        default="breadth-first",
+    )
+    nxt.add_argument("--token-limit", type=int, default=DEFAULT_TOKEN_LIMIT)
+    nxt.add_argument("--output-root", default=".system-map")
+    nxt.add_argument("--output-layout", choices=["flat", "1-level", "2-level"], default="2-level")
+    nxt.set_defaults(func=cmd_next)
 
     prompt = sub.add_parser("prompt", help="Emit reusable low-context AI prompts for system mapping.")
     prompt.add_argument("kind", choices=["slice", "update"])
