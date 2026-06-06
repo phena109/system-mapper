@@ -22,6 +22,8 @@ JS_IMPORT_RE = re.compile(
     r"(?:import\s+(?:[^'\"]+?\s+from\s+)?|export\s+[^'\"]+?\s+from\s+|require\s*\(|import\s*\()"
     r"[\"']([^\"']+)[\"']"
 )
+JS_METHOD_DEF_RE = re.compile(r"^\s*([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{")
+JS_CALL_RE = re.compile(r"(?:\bnew\s+|\.\s*)?([A-Za-z_$][\w$]*)\s*\(")
 CRON_RE = re.compile(r"(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)")
 MANUAL_RE = re.compile(r"\b(manual|human|admin|operator|retry|runbook|ask|approval)\b", re.I)
 BUSINESS_RE = re.compile(r"\b(rule|must|cannot|should|policy|approval|required|limit|threshold)\b", re.I)
@@ -285,6 +287,40 @@ def _javascript_internal_dependencies(root: Path, path: Path, text: str) -> list
     return targets
 
 
+def _javascript_defined_symbols(text: str) -> set[str]:
+    symbols = set(_symbols(text))
+    for line in text.splitlines():
+        match = JS_METHOD_DEF_RE.match(line)
+        if match and match.group(1) not in {"if", "for", "while", "switch", "catch", "function"}:
+            symbols.add(match.group(1))
+    return symbols
+
+
+def _javascript_call_edges(path: Path, root: Path, text: str) -> list[Edge]:
+    try:
+        rel = str(path.relative_to(root))
+    except ValueError:
+        rel = str(path)
+    defined = _javascript_defined_symbols(text)
+    targets: list[Edge] = []
+    seen: set[str] = set()
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        stripped = line.strip()
+        for name in JS_CALL_RE.findall(line):
+            if name not in defined or name in seen:
+                continue
+            if stripped.startswith((f"function {name}", f"async function {name}")):
+                continue
+            if re.match(rf"^(?:export\s+)?(?:const|let|var)\s+{re.escape(name)}\b", stripped):
+                continue
+            method_definition = JS_METHOD_DEF_RE.match(stripped)
+            if method_definition and method_definition.group(1) == name:
+                continue
+            targets.append(Edge("call", rel, f"{rel}:{name}", "medium", line_number))
+            seen.add(name)
+    return targets
+
+
 def summarize_component(root: Path | str, paths: list[Path | str], component: str | None = None) -> ComponentSummary:
     root = Path(root).resolve()
     resolved = [(Path(p) if Path(p).is_absolute() else root / str(p)).resolve() for p in paths]
@@ -332,6 +368,7 @@ def summarize_component(root: Path | str, paths: list[Path | str], component: st
             for target, line_number in _python_internal_dependencies(root, path, text):
                 edges.append(Edge("internal", rel, target, "high", line_number))
         if kind == "code" and path.suffix.lower() in {".js", ".jsx", ".ts", ".tsx"}:
+            edges.extend(_javascript_call_edges(path, root, text))
             for target, line_number in _javascript_internal_dependencies(root, path, text):
                 edges.append(Edge("internal", rel, target, "high", line_number))
         if kind == "config":

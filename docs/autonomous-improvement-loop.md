@@ -46,6 +46,7 @@ The first research pass found these durable directions:
    - Python bounded slices now emit deterministic `call` edges for local function, class-constructor, and method calls discovered with the stdlib AST, improving intra-file flow maps for low-context workers.
    - JavaScript/TypeScript bounded slices now emit repository-local `internal` edges for relative `import`, re-export, dynamic `import()`, and `require()` specifiers when they resolve to existing source files or index modules.
    - JavaScript/TypeScript entry-point extraction now recognises exported classes, exported functions, and common `const`/`let`/`var` function or arrow-function declarations so bounded slices expose TypeScript route/controller/helper entry points instead of only dependency edges.
+   - JavaScript/TypeScript bounded slices now emit deterministic local `call` edges for calls to same-file functions, classes/constructors, and class-style methods, giving low-context workers a first intra-file flow map for frontend or Node slices.
    - Continue adding optional Tree-sitter or AST-based extractors for Python/JS/TS.
    - Continue extracting richer route declarations, decorators, SQL/table references, and config keys with source spans.
    - Initial edge source spans: external URL, data-store, cron-trigger, Python call, and Python/JavaScript/TypeScript internal dependency edges now carry deterministic `source_line` citations where detected so low-context workers can jump from map edges back to evidence.

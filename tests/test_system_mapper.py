@@ -457,6 +457,56 @@ let refreshMap = async () => 'fresh'
     assert "src/routes/app.ts:refreshMap" in summary.entry_points
 
 
+def test_summary_emits_javascript_call_edges_for_local_functions_and_constructors(tmp_path: Path):
+    write(
+        tmp_path / "src" / "routes" / "app.ts",
+        """
+function collectEvidence() {
+    return []
+}
+
+const buildMap = () => {
+    const evidence = collectEvidence()
+    return new MapBuilder().merge(evidence)
+}
+
+class MapBuilder {
+    merge(evidence) {
+        return evidence
+    }
+}
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["src/routes/app.ts"], component="routes/app")
+
+    call_edges = {edge.target: edge for edge in summary.edges if edge.kind == "call"}
+    assert call_edges["src/routes/app.ts:collectEvidence"].source_line == 6
+    assert call_edges["src/routes/app.ts:MapBuilder"].source_line == 7
+    assert call_edges["src/routes/app.ts:merge"].source_line == 7
+    assert "src/routes/app.ts:return" not in call_edges
+
+
+def test_summary_does_not_emit_javascript_call_edges_for_method_declarations(tmp_path: Path):
+    write(
+        tmp_path / "src" / "routes" / "builder.ts",
+        """
+class MapBuilder {
+    merge(evidence) {
+        return evidence
+    }
+}
+
+const buildMap = () => new MapBuilder()
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["src/routes/builder.ts"], component="routes/builder")
+
+    call_targets = {edge.target for edge in summary.edges if edge.kind == "call"}
+    assert call_targets == {"src/routes/builder.ts:MapBuilder"}
+
+
 def test_summary_emits_internal_edges_for_javascript_and_typescript_relative_imports(tmp_path: Path):
     write(tmp_path / "src" / "routes" / "helpers.ts", "export function normalizeRoute() { return 'ok' }\n")
     write(tmp_path / "src" / "routes" / "shared" / "index.ts", "export const shared = true\n")
