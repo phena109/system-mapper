@@ -69,16 +69,35 @@ def _sentence_with(text: str, pattern: re.Pattern[str]) -> str:
 
 
 def _tables(text: str) -> list[str]:
-    found: list[str] = []
-    for table in TABLE_ASSIGN_RE.findall(text):
-        found.append(table)
-    for line in text.splitlines():
+    return [table for table, _line_number in _tables_with_lines(text)]
+
+
+def _urls_with_lines(text: str) -> list[tuple[str, int]]:
+    found: list[tuple[str, int]] = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        for url in URL_RE.findall(line):
+            found.append((url, line_number))
+    return found
+
+
+def _tables_with_lines(text: str) -> list[tuple[str, int]]:
+    found: list[tuple[str, int]] = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        for table in TABLE_ASSIGN_RE.findall(line):
+            found.append((table, line_number))
         stripped = line.strip().lower()
         if stripped.startswith(("from ", "import ", "from.")) or " import " in stripped:
             continue
         if any(keyword in stripped for keyword in ("select ", " update ", " delete ", " insert ", " join ")):
-            found.extend(SQL_TABLE_RE.findall(line))
+            found.extend((table, line_number) for table in SQL_TABLE_RE.findall(line))
     return found
+
+
+def _first_match_line(text: str, pattern: re.Pattern[str]) -> int | None:
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if pattern.search(line):
+            return line_number
+    return None
 
 
 def _module_to_repo_path(root: Path, module: str) -> str | None:
@@ -132,7 +151,7 @@ def _python_call_edges(path: Path, root: Path, text: str) -> list[Edge]:
         elif isinstance(node.func, ast.Attribute):
             name = node.func.attr
         if name in defined and name not in seen:
-            targets.append(Edge("call", rel, f"{rel}:{name}", "medium"))
+            targets.append(Edge("call", rel, f"{rel}:{name}", "medium", getattr(node, "lineno", None)))
             seen.add(name)
     return targets
 
@@ -238,13 +257,14 @@ def summarize_component(root: Path | str, paths: list[Path | str], component: st
         business = _sentence_with(text, BUSINESS_RE)
         if business:
             business_rules.append(f"{rel}: {business}")
-        if CRON_RE.search(text):
-            edges.append(Edge("trigger", rel, "cron schedule", "medium"))
-        for url in URL_RE.findall(text):
-            edges.append(Edge("external", rel, url, "high" if kind == "code" else "medium"))
-        for table in _tables(text):
+        cron_line = _first_match_line(text, CRON_RE)
+        if cron_line is not None:
+            edges.append(Edge("trigger", rel, "cron schedule", "medium", cron_line))
+        for url, line_number in _urls_with_lines(text):
+            edges.append(Edge("external", rel, url, "high" if kind == "code" else "medium", line_number))
+        for table, line_number in _tables_with_lines(text):
             if table.lower() not in {"table", "from", "join", "def", "function"}:
-                edges.append(Edge("data_store", rel, table, "medium"))
+                edges.append(Edge("data_store", rel, table, "medium", line_number))
         if kind == "code" and path.suffix == ".py":
             edges.extend(_python_call_edges(path, root, text))
             for target in _python_internal_dependencies(root, path, text):

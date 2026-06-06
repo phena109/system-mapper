@@ -37,6 +37,7 @@ class Edge:
     source: str
     target: str
     confidence: str = "medium"
+    source_line: int | None = None
 
 
 @dataclass

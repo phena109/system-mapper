@@ -54,6 +54,7 @@ def cmd_graph(args: argparse.Namespace) -> None:
                     "source": edge.source,
                     "target": edge.target,
                     "confidence": edge.confidence,
+                    "source_line": edge.source_line,
                 },
                 sort_keys=True,
             )

@@ -143,6 +143,26 @@ def test_cli_prompt_outputs_low_context_ai_contract():
     assert "Machine-readable edges" in result.stdout
 
 
+def test_summary_records_source_lines_for_detected_edges(tmp_path: Path):
+    write(
+        tmp_path / "src" / "billing.py",
+        """
+import requests
+DATABASE_TABLE = "invoices"
+
+def export_invoice(invoice_id):
+    requests.post("https://partner.example/export", json={"invoice_id": invoice_id})
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["src/billing.py"], component="billing/export")
+
+    external = next(edge for edge in summary.edges if edge.kind == "external")
+    data_store = next(edge for edge in summary.edges if edge.kind == "data_store")
+    assert external.source_line == 5
+    assert data_store.source_line == 2
+
+
 def test_cli_graph_emits_slice_edges_as_jsonl(tmp_path: Path):
     write(
         tmp_path / "src" / "billing.py",
@@ -175,6 +195,7 @@ def export_invoice(invoice_id):
 
     records = [json.loads(line) for line in result.stdout.splitlines()]
     assert any(record["kind"] == "external" and record["target"] == "https://partner.example/export" for record in records)
+    assert any(record["kind"] == "external" and record["source_line"] == 5 for record in records)
     assert any(record["kind"] == "data_store" and record["target"] == "invoices" for record in records)
     assert all(record["component"] == "billing/export" for record in records)
     assert all(record["source"] == "src/billing.py" for record in records)

@@ -47,6 +47,7 @@ The first research pass found these durable directions:
    - JavaScript/TypeScript bounded slices now emit repository-local `internal` edges for relative `import`, re-export, dynamic `import()`, and `require()` specifiers when they resolve to existing source files or index modules.
    - Continue adding optional Tree-sitter or AST-based extractors for Python/JS/TS.
    - Continue extracting richer route declarations, decorators, SQL/table references, and config keys with source spans.
+   - Initial edge source spans: external URL, data-store, cron-trigger, and Python call edges now carry deterministic `source_line` citations where detected so low-context workers can jump from map edges back to evidence.
 
 2. **Graph/community layer**
    - Store edges as JSONL.
