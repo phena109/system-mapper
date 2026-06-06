@@ -6,11 +6,12 @@ from pathlib import Path
 from typing import Literal
 
 from .inventory import build_inventory
+from .summarizer import summarize_component
 
 DEFAULT_TOKEN_LIMIT = 45_000
 CHARS_PER_TOKEN_ESTIMATE = 4
 
-SliceStrategy = Literal["breadth-first", "depth-first", "chronological"]
+SliceStrategy = Literal["breadth-first", "depth-first", "chronological", "dependency-aware"]
 OutputLayout = Literal["flat", "1-level", "2-level"]
 
 
@@ -70,6 +71,12 @@ def _commit_timestamps(root: Path, paths: list[str]) -> dict[str, int]:
 def _ordered_items(root: Path, strategy: SliceStrategy):
     inventory = build_inventory(root)
     candidates = [item for item in inventory.items if item.kind in {"code", "document", "config"}]
+    if strategy == "dependency-aware":
+        edge_counts: dict[str, int] = {}
+        for item in candidates:
+            summary = summarize_component(root, [item.path], component=Path(item.path).with_suffix("").as_posix())
+            edge_counts[item.path] = len(summary.edges)
+        return sorted(candidates, key=lambda item: (-edge_counts.get(item.path, 0), len(Path(item.path).parts), item.path))
     if strategy == "depth-first":
         return sorted(candidates, key=lambda item: item.path)
     if strategy == "chronological":

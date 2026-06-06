@@ -25,6 +25,7 @@ def test_inventory_discovers_code_docs_configs_and_ignores_dependencies(tmp_path
     write(tmp_path / "docs" / "billing.md", "# Billing\nExports run nightly.\n")
     write(tmp_path / "config" / "schedule.yml", "cron: nightly\n")
     write(tmp_path / "node_modules" / "ignored.js", "console.log('ignore')\n")
+    write(tmp_path / ".pytest_cache" / "README.md", "# cache\n")
 
     inventory = build_inventory(tmp_path)
 
@@ -33,6 +34,7 @@ def test_inventory_discovers_code_docs_configs_and_ignores_dependencies(tmp_path
     assert "docs/billing.md" in rel_paths
     assert "config/schedule.yml" in rel_paths
     assert "node_modules/ignored.js" not in rel_paths
+    assert ".pytest_cache/README.md" not in rel_paths
     assert inventory.counts_by_kind["code"] == 1
     assert inventory.counts_by_kind["document"] == 1
     assert inventory.counts_by_kind["config"] == 1
@@ -384,6 +386,26 @@ def test_slice_plan_splits_when_token_limit_is_exceeded(tmp_path: Path):
     assert [slice_.paths for slice_ in plan.slices] == [["src/a.py"], ["src/b.py"]]
     assert all(slice_.estimated_tokens == 6 for slice_ in plan.slices)
     assert plan.slices[0].output_locations["packet"] == ".system-map/packets/src-a.json"
+
+
+def test_slice_plan_dependency_aware_prioritizes_edge_rich_files(tmp_path: Path):
+    write(tmp_path / "src" / "leaf.py", "def helper():\n    return 'ok'\n")
+    write(
+        tmp_path / "src" / "orchestrator.py",
+        """
+import src.leaf
+DATABASE_TABLE = "system_maps"
+
+def run_mapping():
+    return src.leaf.helper()
+""".strip(),
+    )
+    write(tmp_path / "docs" / "overview.md", "# Overview\nManual review may be required.\n")
+
+    plan = build_slice_plan(tmp_path, strategy="dependency-aware", token_limit=12, output_layout="flat")
+
+    assert plan.strategy == "dependency-aware"
+    assert plan.slices[0].paths == ["src/orchestrator.py"]
 
 
 def test_cli_plan_emits_json_with_strategy_and_output_layout(tmp_path: Path):

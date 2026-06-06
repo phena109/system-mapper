@@ -115,9 +115,9 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("root")
     plan.add_argument(
         "--strategy",
-        choices=["breadth-first", "depth-first", "chronological"],
+        choices=["breadth-first", "depth-first", "chronological", "dependency-aware"],
         default="breadth-first",
-        help="Next-slice ordering. Default: breadth-first for whole-system shape first.",
+        help="Next-slice ordering. Default: breadth-first for whole-system shape first; dependency-aware prioritises edge-rich files.",
     )
     plan.add_argument(
         "--token-limit",

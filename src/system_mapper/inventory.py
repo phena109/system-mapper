@@ -14,6 +14,7 @@ SKIP_DIRS = {
     ".venv",
     "__pycache__",
     ".cache",
+    ".pytest_cache",
     "dist",
     "build",
     ".next",

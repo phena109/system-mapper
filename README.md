@@ -86,7 +86,7 @@ uv run system-mapper plan /path/to/repo \
   --json
 ```
 
-Strategy options are `breadth-first`, `depth-first`, and `chronological`; output layouts are `flat`, `1-level`, and `2-level`. Defaults are `breadth-first` and `2-level` so an initial map gets a broad system shape without dumping every artifact into one flat folder.
+Strategy options are `breadth-first`, `depth-first`, `chronological`, and `dependency-aware`; output layouts are `flat`, `1-level`, and `2-level`. Defaults are `breadth-first` and `2-level` so an initial map gets a broad system shape without dumping every artifact into one flat folder. Use `dependency-aware` when a follow-up worker should prioritise edge-rich files with internal dependencies, external systems, data stores, or triggers before quieter supporting artefacts.
 
 Emit a prompt contract for a low-context AI worker:
 

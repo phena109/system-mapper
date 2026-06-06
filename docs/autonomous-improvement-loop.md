@@ -76,7 +76,8 @@ The first research pass found these durable directions:
    - Initial implementation: `system-mapper packet` emits a deterministic slice summary, prompt contract, edges, unknowns, and next actions as JSON for low-context worker handoff.
 
 3. **Dependency-aware traversal**
-   - Suggest next files by edge fan-out, unknowns, and stale evidence rather than folder order.
+   - Initial implementation: `system-mapper plan --strategy dependency-aware` prioritises edge-rich files from deterministic slice summaries before quieter supporting artefacts.
+   - Continue suggesting next files by edge fan-out, unknowns, and stale evidence rather than folder order.
 
 4. **CI/local smoke checks**
    - Keep deterministic CLI checks cheap so scheduled runs can execute often.
