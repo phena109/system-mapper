@@ -16,7 +16,36 @@ It is not a magic architecture oracle. The intended use is:
 
 ## Five-minute first run
 
-From this repository, run the commands against the project you want to inspect:
+### Fast path: let `next` choose the slice
+
+From this repository, run the command against the project you want to inspect:
+
+```bash
+uv run system-mapper next /path/to/target --output-layout flat
+```
+
+If the command returns `outcome: "advanced"`, open the files listed under `artifacts`:
+
+1. Read `summary` first. This is the bounded component summary.
+2. Skim `edges` next. This is JSONL dependency/flow evidence.
+3. Give `packet` to a human or low-context AI worker if you want interpretation or follow-up analysis.
+
+Run the same command again to advance to the next missing slice. When it returns `outcome: "no_change"`, the current planned slices already have artifacts.
+
+A minimal repeated loop can be this simple:
+
+```bash
+while true; do
+  uv run system-mapper next /path/to/target --output-layout flat
+  sleep 600
+done
+```
+
+The loop only repeats. The mapper records progress in `.system-map/`.
+
+### Manual path: inspect the plan yourself
+
+If you want to choose slices manually, start with inventory and plan:
 
 ```bash
 mkdir -p .system-map/{inventory,plans,components,edges,packets}

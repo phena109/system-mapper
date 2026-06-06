@@ -34,6 +34,8 @@ If you are new to the project, read these first:
 
 ## Install / run
 
+From this repository checkout:
+
 ```bash
 uv run system-mapper --help
 ```
@@ -44,9 +46,37 @@ Or directly:
 uv run python -m system_mapper.cli --help
 ```
 
+## Quick start: map something useful
+
+If you just want to start mapping a local project, use `next`. It is the easiest entry point because it chooses the next bounded slice and writes all three core artifacts for that slice.
+
+```bash
+# From the system-mapper checkout
+uv run system-mapper next /path/to/repo --output-layout flat
+```
+
+Look at the returned JSON:
+
+- `outcome: "advanced"` means it wrote a new slice's artifacts.
+- `artifacts.summary` is the component summary to read first.
+- `artifacts.edges` is the machine-readable edge list.
+- `artifacts.packet` is the low-context AI handoff packet.
+- `outcome: "no_change"` means every currently planned slice already has artifacts.
+
+For a small repeated run, keep the loop dumb and let the mapper's `.system-map/` artifacts record progress:
+
+```bash
+while true; do
+  uv run system-mapper next /path/to/repo --output-layout flat
+  sleep 600
+done
+```
+
+Stop the loop once `next` returns `no_change`, or leave it under cron if the target repo keeps changing.
+
 ## Examples
 
-Inventory a repository:
+Inventory a repository manually:
 
 ```bash
 uv run system-mapper inventory /path/to/repo --json > .system-map/inventory.json
