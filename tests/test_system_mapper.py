@@ -434,6 +434,27 @@ def health():
     assert ("/maps", 5, "high") not in route_edges
 
 
+def test_summary_uses_javascript_exports_and_arrow_functions_as_entry_points(tmp_path: Path):
+    write(
+        tmp_path / "src" / "routes" / "app.ts",
+        """
+export class RouteRegistry {}
+export const buildRouteMap = () => ({})
+const normalizeRoute = function () {
+    return 'ok'
+}
+let refreshMap = async () => 'fresh'
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["src/routes/app.ts"], component="routes/app")
+
+    assert "src/routes/app.ts:RouteRegistry" in summary.entry_points
+    assert "src/routes/app.ts:buildRouteMap" in summary.entry_points
+    assert "src/routes/app.ts:normalizeRoute" in summary.entry_points
+    assert "src/routes/app.ts:refreshMap" in summary.entry_points
+
+
 def test_summary_emits_internal_edges_for_javascript_and_typescript_relative_imports(tmp_path: Path):
     write(tmp_path / "src" / "routes" / "helpers.ts", "export function normalizeRoute() { return 'ok' }\n")
     write(tmp_path / "src" / "routes" / "shared" / "index.ts", "export const shared = true\n")

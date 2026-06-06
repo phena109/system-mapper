@@ -10,9 +10,10 @@ from .models import ComponentSummary, Edge, Evidence
 
 URL_RE = re.compile(r"https?://[^\s'\"),}]+")
 FUNC_RE = re.compile(
-    r"^\s*(?:def|function)\s+([A-Za-z_][\w]*)"
+    r"^\s*(?:async\s+)?def\s+([A-Za-z_][\w]*)"
     r"|^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_][\w]*)"
-    r"|^\s*class\s+([A-Za-z_][\w]*)",
+    r"|^\s*(?:export\s+)?class\s+([A-Za-z_][\w]*)"
+    r"|^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)",
     re.M,
 )
 TABLE_ASSIGN_RE = re.compile(r"\b[A-Za-z_]*TABLE[A-Za-z_]*\s*=\s*[\"']([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)?)[\"']", re.I)

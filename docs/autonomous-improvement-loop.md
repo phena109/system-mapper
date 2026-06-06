@@ -45,6 +45,7 @@ The first research pass found these durable directions:
    - Python entry-point extraction now uses the stdlib AST so async functions, classes, and methods are captured more reliably than regex-only scans.
    - Python bounded slices now emit deterministic `call` edges for local function, class-constructor, and method calls discovered with the stdlib AST, improving intra-file flow maps for low-context workers.
    - JavaScript/TypeScript bounded slices now emit repository-local `internal` edges for relative `import`, re-export, dynamic `import()`, and `require()` specifiers when they resolve to existing source files or index modules.
+   - JavaScript/TypeScript entry-point extraction now recognises exported classes, exported functions, and common `const`/`let`/`var` function or arrow-function declarations so bounded slices expose TypeScript route/controller/helper entry points instead of only dependency edges.
    - Continue adding optional Tree-sitter or AST-based extractors for Python/JS/TS.
    - Continue extracting richer route declarations, decorators, SQL/table references, and config keys with source spans.
    - Initial edge source spans: external URL, data-store, cron-trigger, and Python call edges now carry deterministic `source_line` citations where detected so low-context workers can jump from map edges back to evidence.
