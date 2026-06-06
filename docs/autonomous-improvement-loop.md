@@ -51,6 +51,7 @@ The first research pass found these durable directions:
    - Continue extracting richer route declarations, decorators, SQL/table references, and config keys with source spans.
    - Initial edge source spans: external URL, data-store, cron-trigger, Python call, and Python/JavaScript/TypeScript internal dependency edges now carry deterministic `source_line` citations where detected so low-context workers can jump from map edges back to evidence.
    - Python web-route decorators such as FastAPI/Flask-style `@router.get("/path")`, `@app.post("/path")`, and Flask-style `@app.route("/path", methods=[...])` now emit high-confidence `route` edges with source-line citations and HTTP methods, improving interface maps for API slices.
+   - JavaScript/TypeScript Express-style route registrations such as `router.get('/maps/:mapId', handler)`, `app.post('/maps', handler)`, and `router.route('/maps/:mapId').delete(handler)` now emit deterministic `route` edges with source-line citations so Node/Express API slices expose interface maps too.
 
 2. **Graph/community layer**
    - Store edges as JSONL.

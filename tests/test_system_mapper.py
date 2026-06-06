@@ -549,6 +549,28 @@ const buildMap = () => new MapBuilder()
     assert call_targets == {"src/routes/builder.ts:MapBuilder"}
 
 
+def test_summary_emits_route_edges_for_javascript_express_style_handlers(tmp_path: Path):
+    write(
+        tmp_path / "src" / "routes" / "maps.ts",
+        """
+import express from 'express'
+
+const router = express.Router()
+
+router.get('/maps/:mapId', loadMap)
+app.post("/maps", createMap)
+router.route('/maps/:mapId').delete(deleteMap)
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["src/routes/maps.ts"], component="routes/maps")
+
+    route_edges = {(edge.target, edge.source_line, edge.confidence) for edge in summary.edges if edge.kind == "route"}
+    assert ("GET /maps/:mapId", 5, "medium") in route_edges
+    assert ("POST /maps", 6, "medium") in route_edges
+    assert ("DELETE /maps/:mapId", 7, "medium") in route_edges
+
+
 def test_summary_emits_internal_edges_for_javascript_and_typescript_relative_imports(tmp_path: Path):
     write(tmp_path / "src" / "routes" / "helpers.ts", "export function normalizeRoute() { return 'ok' }\n")
     write(tmp_path / "src" / "routes" / "shared" / "index.ts", "export const shared = true\n")

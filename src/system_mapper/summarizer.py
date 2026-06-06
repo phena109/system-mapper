@@ -24,6 +24,14 @@ JS_IMPORT_RE = re.compile(
 )
 JS_METHOD_DEF_RE = re.compile(r"^\s*([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{")
 JS_CALL_RE = re.compile(r"(?:\bnew\s+|\.\s*)?([A-Za-z_$][\w$]*)\s*\(")
+JS_ROUTE_METHOD_RE = re.compile(
+    r"\b(?:app|router)\s*\.\s*(get|post|put|patch|delete|options|head)\s*\(\s*[\"']([^\"']+)[\"']",
+    re.I,
+)
+JS_ROUTE_CHAIN_RE = re.compile(
+    r"\b(?:app|router)\s*\.\s*route\s*\(\s*[\"']([^\"']+)[\"']\s*\)\s*\.\s*(get|post|put|patch|delete|options|head)\s*\(",
+    re.I,
+)
 CRON_RE = re.compile(r"(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)")
 MANUAL_RE = re.compile(r"\b(manual|human|admin|operator|retry|runbook|ask|approval)\b", re.I)
 BUSINESS_RE = re.compile(r"\b(rule|must|cannot|should|policy|approval|required|limit|threshold)\b", re.I)
@@ -321,6 +329,29 @@ def _javascript_call_edges(path: Path, root: Path, text: str) -> list[Edge]:
     return targets
 
 
+def _javascript_route_edges(path: Path, root: Path, text: str) -> list[Edge]:
+    try:
+        rel = str(path.relative_to(root))
+    except ValueError:
+        rel = str(path)
+    routes: list[Edge] = []
+    seen: set[tuple[str, int]] = set()
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        for method, route_path in JS_ROUTE_METHOD_RE.findall(line):
+            target = f"{method.upper()} {route_path}"
+            key = (target, line_number)
+            if key not in seen:
+                routes.append(Edge("route", rel, target, "medium", line_number))
+                seen.add(key)
+        for route_path, method in JS_ROUTE_CHAIN_RE.findall(line):
+            target = f"{method.upper()} {route_path}"
+            key = (target, line_number)
+            if key not in seen:
+                routes.append(Edge("route", rel, target, "medium", line_number))
+                seen.add(key)
+    return routes
+
+
 def summarize_component(root: Path | str, paths: list[Path | str], component: str | None = None) -> ComponentSummary:
     root = Path(root).resolve()
     resolved = [(Path(p) if Path(p).is_absolute() else root / str(p)).resolve() for p in paths]
@@ -369,6 +400,7 @@ def summarize_component(root: Path | str, paths: list[Path | str], component: st
                 edges.append(Edge("internal", rel, target, "high", line_number))
         if kind == "code" and path.suffix.lower() in {".js", ".jsx", ".ts", ".tsx"}:
             edges.extend(_javascript_call_edges(path, root, text))
+            edges.extend(_javascript_route_edges(path, root, text))
             for target, line_number in _javascript_internal_dependencies(root, path, text):
                 edges.append(Edge("internal", rel, target, "high", line_number))
         if kind == "config":
