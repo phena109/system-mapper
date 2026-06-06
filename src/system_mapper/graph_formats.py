@@ -35,6 +35,20 @@ def _edge_line(edge: Edge) -> str:
     return f"  {source} -->|{edge.kind} / {edge.confidence}| {target}"
 
 
+def _dot_quote(value: str) -> str:
+    return '"' + _quote_label(value) + '"'
+
+
+def _dot_node_line(label: str) -> str:
+    quoted = _dot_quote(label)
+    return f"  {quoted} [label={quoted}];"
+
+
+def _dot_edge_line(edge: Edge) -> str:
+    label = _dot_quote(f"{edge.kind} / {edge.confidence}")
+    return f"  {_dot_quote(edge.source)} -> {_dot_quote(edge.target)} [label={label}];"
+
+
 def render_mermaid(summary: ComponentSummary) -> str:
     """Render a component's deterministic edge records as a Mermaid flowchart."""
     lines = ["flowchart TD"]
@@ -49,4 +63,20 @@ def render_mermaid(summary: ComponentSummary) -> str:
     if not summary.edges:
         label = summary.component or "component"
         lines.append(_node_line(label))
+    return "\n".join(lines) + "\n"
+
+
+def render_dot(summary: ComponentSummary) -> str:
+    """Render a component's deterministic edge records as Graphviz DOT."""
+    lines = ["digraph system_map {"]
+    seen_nodes: set[str] = set()
+    for edge in summary.edges:
+        for label in (edge.source, edge.target):
+            if label not in seen_nodes:
+                lines.append(_dot_node_line(label))
+                seen_nodes.add(label)
+        lines.append(_dot_edge_line(edge))
+    if not summary.edges:
+        lines.append(_dot_node_line(summary.component or "component"))
+    lines.append("}")
     return "\n".join(lines) + "\n"

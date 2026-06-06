@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from .graph_formats import render_mermaid
+from .graph_formats import render_dot, render_mermaid
 from .inventory import build_inventory
 from .packet import build_work_packet
 from .planner import DEFAULT_TOKEN_LIMIT, build_slice_plan
@@ -44,6 +44,9 @@ def cmd_graph(args: argparse.Namespace) -> None:
     summary = summarize_component(args.root, args.paths, args.component)
     if args.format == "mermaid":
         print(render_mermaid(summary), end="")
+        return
+    if args.format == "dot":
+        print(render_dot(summary), end="")
         return
     for edge in summary.edges:
         print(
@@ -110,9 +113,9 @@ def build_parser() -> argparse.ArgumentParser:
     graph.add_argument("--component")
     graph.add_argument(
         "--format",
-        choices=["jsonl", "mermaid"],
+        choices=["jsonl", "mermaid", "dot"],
         default="jsonl",
-        help="Graph output format. Default: jsonl for machine merge; mermaid gives a text diagram for review.",
+        help="Graph output format. Default: jsonl for machine merge; mermaid and dot give text diagrams for review.",
     )
     graph.set_defaults(func=cmd_graph)
 

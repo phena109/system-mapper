@@ -270,6 +270,48 @@ def run_mapping():
     assert 'src_orchestrator_py -->|data_store / medium| system_maps' in result.stdout
 
 
+def test_cli_graph_can_emit_dot_for_graphviz_system_map_reviews(tmp_path: Path):
+    write(tmp_path / "src" / "leaf.py", "def helper():\n    return 'ok'\n")
+    write(
+        tmp_path / "src" / "orchestrator.py",
+        """
+import src.leaf
+DATABASE_TABLE = "system_maps"
+
+def run_mapping():
+    return src.leaf.helper()
+""".strip(),
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "system_mapper.cli",
+            "graph",
+            str(tmp_path),
+            "src/orchestrator.py",
+            "--component",
+            "system/orchestrator",
+            "--format",
+            "dot",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    assert result.stdout.splitlines()[0] == "digraph system_map {"
+    assert '  "src/orchestrator.py" [label="src/orchestrator.py"];' in result.stdout
+    assert '  "src/leaf.py" [label="src/leaf.py"];' in result.stdout
+    assert '  "src/orchestrator.py" -> "src/leaf.py" [label="internal / high"];' in result.stdout
+    assert '  "system_maps" [label="system_maps"];' in result.stdout
+    assert '  "src/orchestrator.py" -> "system_maps" [label="data_store / medium"];' in result.stdout
+    assert result.stdout.splitlines()[-1] == "}"
+
+
 def test_summary_does_not_treat_python_imports_as_data_stores(tmp_path: Path):
     write(
         tmp_path / "src" / "imports_only.py",
