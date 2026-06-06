@@ -220,6 +220,29 @@ def export_invoice():
     assert "json" not in internal_targets
 
 
+def test_summary_emits_internal_edges_for_python_from_imported_submodules(tmp_path: Path):
+    write(tmp_path / "src" / "billing" / "__init__.py", "")
+    write(tmp_path / "src" / "billing" / "settings.py", "API_URL = 'https://partner.example'\n")
+    write(tmp_path / "src" / "billing" / "helpers.py", "def normalize_invoice():\n    return 'ok'\n")
+    write(
+        tmp_path / "src" / "billing" / "export.py",
+        """
+from src.billing import settings
+from . import helpers
+
+def export_invoice():
+    return helpers.normalize_invoice()
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["src/billing/export.py"], component="billing/export")
+
+    internal_targets = {edge.target for edge in summary.edges if edge.kind == "internal"}
+    assert "src/billing/settings.py" in internal_targets
+    assert "src/billing/helpers.py" in internal_targets
+    assert "src/billing/__init__.py" not in internal_targets
+
+
 def test_summary_uses_python_ast_to_include_async_entry_points(tmp_path: Path):
     write(
         tmp_path / "src" / "worker.py",

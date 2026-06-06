@@ -115,23 +115,33 @@ def _python_internal_dependencies(root: Path, path: Path, text: str) -> list[str
     targets: list[str] = []
     seen: set[str] = set()
 
-    def add(module: str | None) -> None:
+    def add(module: str | None) -> bool:
         if not module:
-            return
+            return False
         target = _module_to_repo_path(root, module)
-        if target and target not in seen:
+        if not target:
+            return False
+        if target not in seen:
             targets.append(target)
             seen.add(target)
+        return True
+
+    def add_import_from(node: ast.ImportFrom) -> None:
+        base_module = _relative_import_module(path, root, node.module, node.level) if node.level else node.module
+        found_imported_submodule = False
+        for alias in node.names:
+            if alias.name == "*" or not base_module:
+                continue
+            found_imported_submodule = add(f"{base_module}.{alias.name}") or found_imported_submodule
+        if not found_imported_submodule:
+            add(base_module)
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 add(alias.name)
         elif isinstance(node, ast.ImportFrom):
-            if node.level:
-                add(_relative_import_module(path, root, node.module, node.level))
-            else:
-                add(node.module)
+            add_import_from(node)
     return targets
 
 
