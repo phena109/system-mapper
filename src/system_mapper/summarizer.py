@@ -38,6 +38,12 @@ PHP_SYMBOL_RE = re.compile(
     r"|^\s*(?:(?:public|protected|private|static|abstract|final)\s+)*function\s+([A-Za-z_][\w]*)\s*\(",
     re.M,
 )
+GO_SYMBOL_RE = re.compile(
+    r"^\s*type\s+([A-Za-z_][\w]*)\s+(?:struct|interface|func|map|chan|\[|[A-Za-z_])"
+    r"|^\s*func\s+(?:\([^)]*\)\s*)?([A-Za-z_][\w]*)\s*\(",
+    re.M,
+)
+GO_IMPORT_RE = re.compile(r"^\s*(?:[A-Za-z_][\w]*\s+)?[\"']([^\"']+)[\"']", re.M)
 C_LIKE_SYMBOL_RE = re.compile(
     r"^\s*(?:public|private|protected|static|final|abstract|async|extern|inline|virtual|const|unsigned|signed|long|short|struct\s+|enum\s+|class\s+)*"
     r"(?:[A-Za-z_][\w:<>,*&\[\]\s]+\s+)+([A-Za-z_][\w]*)\s*\([^;{}]*\)\s*(?:\{|=>)"
@@ -76,7 +82,12 @@ def _symbols(text: str) -> list[str]:
 
 
 def _c_like_symbols(text: str, suffix: str) -> list[str]:
-    pattern = PHP_SYMBOL_RE if suffix == ".php" else C_LIKE_SYMBOL_RE
+    if suffix == ".php":
+        pattern = PHP_SYMBOL_RE
+    elif suffix == ".go":
+        pattern = GO_SYMBOL_RE
+    else:
+        pattern = C_LIKE_SYMBOL_RE
     found: list[str] = []
     for match in pattern.finditer(text):
         symbol = next((g for g in match.groups() if g), None)
@@ -391,6 +402,59 @@ def _resolve_relative_candidate(root: Path, path: Path, specifier: str, suffixes
     return None
 
 
+def _go_module_path(root: Path) -> str | None:
+    go_mod = root / "go.mod"
+    if not go_mod.is_file():
+        return None
+    for line in _safe_read(go_mod).splitlines():
+        stripped = line.strip()
+        if stripped.startswith("module "):
+            return stripped.split(None, 1)[1].strip()
+    return None
+
+
+def _resolve_go_import(root: Path, import_path: str) -> str | None:
+    module = _go_module_path(root)
+    if not module or not import_path.startswith(f"{module}/"):
+        return None
+    rel_dir = import_path[len(module) + 1 :]
+    candidate_dir = (root / rel_dir).resolve()
+    if not candidate_dir.is_dir() or not candidate_dir.is_relative_to(root):
+        return None
+    go_files = sorted(path for path in candidate_dir.glob("*.go") if not path.name.endswith("_test.go"))
+    if go_files:
+        return str(go_files[0].relative_to(root))
+    return None
+
+
+def _go_internal_dependencies(root: Path, text: str) -> list[tuple[str, int | None]]:
+    targets: list[tuple[str, int | None]] = []
+    seen: set[str] = set()
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        for import_path in GO_IMPORT_RE.findall(line):
+            target = _resolve_go_import(root, import_path)
+            if target and target not in seen:
+                targets.append((target, line_number))
+                seen.add(target)
+    return targets
+
+
+def _go_call_edges(rel: str, text: str) -> list[Edge]:
+    defined = set(_c_like_symbols(text, ".go"))
+    targets: list[Edge] = []
+    seen: set[str] = set()
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        stripped = line.strip()
+        if stripped.startswith(("func ", "type ", "package ", "import ")):
+            continue
+        for name in C_LIKE_CALL_RE.findall(line):
+            if name not in defined or name in seen:
+                continue
+            targets.append(Edge("call", rel, f"{rel}:{name}", "medium", line_number))
+            seen.add(name)
+    return targets
+
+
 def _php_include_specifier(expression: str) -> str | None:
     strings = STRING_RE.findall(expression)
     if not strings:
@@ -421,6 +485,9 @@ def _c_like_internal_dependencies(root: Path, path: Path, text: str) -> list[tup
                     add(_resolve_relative_candidate(root, path, specifier, (".php",)), line_number)
         return targets
 
+    if suffix == ".go":
+        return _go_internal_dependencies(root, text)
+
     if suffix in {".c", ".h", ".cpp", ".hpp", ".cc", ".cxx"}:
         for line_number, line in enumerate(text.splitlines(), start=1):
             for specifier in C_INCLUDE_RE.findall(line):
@@ -433,6 +500,8 @@ def _c_like_call_edges(path: Path, root: Path, text: str) -> list[Edge]:
         rel = str(path.relative_to(root))
     except ValueError:
         rel = str(path)
+    if path.suffix.lower() == ".go":
+        return _go_call_edges(rel, text)
     targets: list[Edge] = []
     seen: set[tuple[str, int]] = set()
     skip_names = {

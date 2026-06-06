@@ -53,6 +53,7 @@ The first research pass found these durable directions:
    - Python web-route decorators such as FastAPI/Flask-style `@router.get("/path")`, `@app.post("/path")`, and Flask-style `@app.route("/path", methods=[...])` now emit high-confidence `route` edges with source-line citations and HTTP methods, improving interface maps for API slices.
    - JavaScript/TypeScript Express-style route registrations such as `router.get('/maps/:mapId', handler)`, `app.post('/maps', handler)`, and `router.route('/maps/:mapId').delete(handler)` now emit deterministic `route` edges with source-line citations so Node/Express API slices expose interface maps too.
    - PHP-first C-like support now extracts PHP classes/functions/methods, PHP include/require internal dependency edges, PHP route-style calls, generic C-like call edges, and C/C++ quoted `#include` internal edges. Slice ordering gives PHP first priority among C-like languages because early target use cases are PHP-heavy.
+   - Go bounded slices now extract `type` and `func` declarations (including methods) as entry points, emit deterministic same-file call edges for declared functions/methods, and resolve same-module imports from `go.mod` to repository-local `.go` files so Go services contribute explicit map edges without adding a parser dependency yet.
 
 2. **Graph/community layer**
    - Store edges as JSONL.

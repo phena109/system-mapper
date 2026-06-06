@@ -530,6 +530,91 @@ class MapBuilder {
     assert "src/routes/app.ts:return" not in call_edges
 
 
+def test_summary_uses_go_declarations_as_entry_points(tmp_path: Path):
+    write(
+        tmp_path / "cmd" / "mapper" / "main.go",
+        """
+package main
+
+type MapServer struct {}
+
+func NewMapServer() *MapServer {
+    return &MapServer{}
+}
+
+func (s *MapServer) Serve() {}
+
+func main() {
+    NewMapServer().Serve()
+}
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["cmd/mapper/main.go"], component="mapper")
+
+    assert "cmd/mapper/main.go:MapServer" in summary.entry_points
+    assert "cmd/mapper/main.go:NewMapServer" in summary.entry_points
+    assert "cmd/mapper/main.go:Serve" in summary.entry_points
+    assert "cmd/mapper/main.go:main" in summary.entry_points
+
+
+def test_summary_emits_internal_edges_for_go_module_imports(tmp_path: Path):
+    write(tmp_path / "go.mod", "module github.com/acme/maps\n")
+    write(tmp_path / "internal" / "auth" / "token.go", "package auth\n\nfunc IssueToken() string { return \"token\" }\n")
+    write(
+        tmp_path / "cmd" / "api" / "main.go",
+        """
+package main
+
+import (
+    "fmt"
+    "github.com/acme/maps/internal/auth"
+)
+
+func main() {
+    fmt.Println(auth.IssueToken())
+}
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["cmd/api/main.go"], component="api")
+
+    internal_edges = {edge.target: edge for edge in summary.edges if edge.kind == "internal"}
+    assert "internal/auth/token.go" in internal_edges
+    assert internal_edges["internal/auth/token.go"].source_line == 5
+    assert "fmt" not in internal_edges
+
+
+def test_summary_emits_go_call_edges_only_for_same_file_calls(tmp_path: Path):
+    write(
+        tmp_path / "cmd" / "api" / "main.go",
+        """
+package main
+
+import "fmt"
+
+type Server struct{}
+
+func NewServer() *Server {
+    return &Server{}
+}
+
+func (s *Server) Serve() {
+    fmt.Println("ready")
+}
+
+func main() {
+    NewServer().Serve()
+}
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["cmd/api/main.go"], component="api")
+
+    call_targets = {edge.target for edge in summary.edges if edge.kind == "call"}
+    assert call_targets == {"cmd/api/main.go:NewServer", "cmd/api/main.go:Serve"}
+
+
 def test_summary_emits_php_symbols_calls_routes_and_internal_edges(tmp_path: Path):
     write(tmp_path / "src" / "Auth" / "Token.php", "<?php\nfunction issueToken() { return 'token'; }\n")
     write(
