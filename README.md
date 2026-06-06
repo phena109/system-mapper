@@ -23,6 +23,14 @@ It is designed around the approach discussed for weak / low-context AI:
 
 This version uses deterministic heuristics only. It is intentionally suitable as a substrate for low-power AI agents: the CLI gathers stable evidence and produces structured context for an agent to review or merge upward.
 
+## Start here
+
+If you are new to the project, read these first:
+
+1. [`docs/START_HERE.md`](docs/START_HERE.md) — a five-minute first run and the recommended workflow.
+2. [`docs/interpreting-output.md`](docs/interpreting-output.md) — how to judge strong claims, weak claims, unknowns, confidence, and graph edges.
+3. [`docs/templates.md`](docs/templates.md) — copyable component notes, interview prompts, and review checklists.
+
 ## Install / run
 
 ```bash
