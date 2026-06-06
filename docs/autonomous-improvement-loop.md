@@ -49,6 +49,7 @@ The first research pass found these durable directions:
 
 2. **Graph/community layer**
    - Store edges as JSONL.
+   - Initial visual review support: `system-mapper graph --format mermaid` now renders bounded slice edges as a Mermaid flowchart while preserving JSONL as the machine-merge default.
    - Generate component clusters from edges.
    - Emit subsystem-level summaries from lower-level summaries, preserving conflicts.
 

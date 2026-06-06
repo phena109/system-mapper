@@ -180,6 +180,47 @@ def export_invoice(invoice_id):
     assert all(record["source"] == "src/billing.py" for record in records)
 
 
+def test_cli_graph_can_emit_mermaid_flowchart_for_visual_map_reviews(tmp_path: Path):
+    write(tmp_path / "src" / "leaf.py", "def helper():\n    return 'ok'\n")
+    write(
+        tmp_path / "src" / "orchestrator.py",
+        """
+import src.leaf
+DATABASE_TABLE = "system_maps"
+
+def run_mapping():
+    return src.leaf.helper()
+""".strip(),
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "system_mapper.cli",
+            "graph",
+            str(tmp_path),
+            "src/orchestrator.py",
+            "--component",
+            "system/orchestrator",
+            "--format",
+            "mermaid",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    assert result.stdout.splitlines()[0] == "flowchart TD"
+    assert 'src_orchestrator_py["src/orchestrator.py"]' in result.stdout
+    assert 'src_leaf_py["src/leaf.py"]' in result.stdout
+    assert 'src_orchestrator_py -->|internal / high| src_leaf_py' in result.stdout
+    assert 'system_maps["system_maps"]' in result.stdout
+    assert 'src_orchestrator_py -->|data_store / medium| system_maps' in result.stdout
+
+
 def test_summary_does_not_treat_python_imports_as_data_stores(tmp_path: Path):
     write(
         tmp_path / "src" / "imports_only.py",

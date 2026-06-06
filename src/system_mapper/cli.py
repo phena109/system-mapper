@@ -5,6 +5,7 @@ import json
 import sys
 from pathlib import Path
 
+from .graph_formats import render_mermaid
 from .inventory import build_inventory
 from .packet import build_work_packet
 from .planner import DEFAULT_TOKEN_LIMIT, build_slice_plan
@@ -41,6 +42,9 @@ def cmd_update(args: argparse.Namespace) -> None:
 
 def cmd_graph(args: argparse.Namespace) -> None:
     summary = summarize_component(args.root, args.paths, args.component)
+    if args.format == "mermaid":
+        print(render_mermaid(summary), end="")
+        return
     for edge in summary.edges:
         print(
             json.dumps(
@@ -99,10 +103,16 @@ def build_parser() -> argparse.ArgumentParser:
     up.add_argument("--json", action="store_true")
     up.set_defaults(func=cmd_update)
 
-    graph = sub.add_parser("graph", help="Emit slice dependency/data-flow edges as JSONL records.")
+    graph = sub.add_parser("graph", help="Emit slice dependency/data-flow edges as JSONL or Mermaid records.")
     graph.add_argument("root")
     graph.add_argument("paths", nargs="+")
     graph.add_argument("--component")
+    graph.add_argument(
+        "--format",
+        choices=["jsonl", "mermaid"],
+        default="jsonl",
+        help="Graph output format. Default: jsonl for machine merge; mermaid gives a text diagram for review.",
+    )
     graph.set_defaults(func=cmd_graph)
 
     packet = sub.add_parser("packet", help="Emit a bounded low-context AI work packet as JSON.")
