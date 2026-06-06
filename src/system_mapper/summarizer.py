@@ -106,6 +106,37 @@ def _relative_import_module(path: Path, root: Path, module: str | None, level: i
     return ".".join(parts) if parts else None
 
 
+def _python_call_edges(path: Path, root: Path, text: str) -> list[Edge]:
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+
+    try:
+        rel = str(path.relative_to(root))
+    except ValueError:
+        rel = str(path)
+    defined = {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+    }
+    targets: list[Edge] = []
+    seen: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = ""
+        if isinstance(node.func, ast.Name):
+            name = node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            name = node.func.attr
+        if name in defined and name not in seen:
+            targets.append(Edge("call", rel, f"{rel}:{name}", "medium"))
+            seen.add(name)
+    return targets
+
+
 def _python_internal_dependencies(root: Path, path: Path, text: str) -> list[str]:
     try:
         tree = ast.parse(text)
@@ -215,6 +246,7 @@ def summarize_component(root: Path | str, paths: list[Path | str], component: st
             if table.lower() not in {"table", "from", "join", "def", "function"}:
                 edges.append(Edge("data_store", rel, table, "medium"))
         if kind == "code" and path.suffix == ".py":
+            edges.extend(_python_call_edges(path, root, text))
             for target in _python_internal_dependencies(root, path, text):
                 edges.append(Edge("internal", rel, target, "high"))
         if kind == "code" and path.suffix.lower() in {".js", ".jsx", ".ts", ".tsx"}:

@@ -307,6 +307,32 @@ class MapWorker:
     assert any("refresh_system_map" in ev.symbols for ev in summary.evidence)
 
 
+def test_summary_emits_python_call_edges_for_local_functions_and_methods(tmp_path: Path):
+    write(
+        tmp_path / "src" / "mapper.py",
+        """
+def collect_evidence():
+    return []
+
+def build_map():
+    evidence = collect_evidence()
+    return MapBuilder().merge(evidence)
+
+class MapBuilder:
+    def merge(self, evidence):
+        return evidence
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["src/mapper.py"], component="mapper")
+
+    call_targets = {edge.target for edge in summary.edges if edge.kind == "call"}
+    assert "src/mapper.py:collect_evidence" in call_targets
+    assert "src/mapper.py:MapBuilder" in call_targets
+    assert "src/mapper.py:merge" in call_targets
+    assert "return" not in call_targets
+
+
 def test_summary_emits_internal_edges_for_javascript_and_typescript_relative_imports(tmp_path: Path):
     write(tmp_path / "src" / "routes" / "helpers.ts", "export function normalizeRoute() { return 'ok' }\n")
     write(tmp_path / "src" / "routes" / "shared" / "index.ts", "export const shared = true\n")

@@ -43,9 +43,10 @@ The first research pass found these durable directions:
    - Initial Python import dependency extraction now uses the stdlib AST to emit repository-local `internal` edges for bounded slices.
    - Python `from package import submodule` and relative `from . import helper` forms now resolve imported repository submodules instead of collapsing to only the package `__init__.py`.
    - Python entry-point extraction now uses the stdlib AST so async functions, classes, and methods are captured more reliably than regex-only scans.
+   - Python bounded slices now emit deterministic `call` edges for local function, class-constructor, and method calls discovered with the stdlib AST, improving intra-file flow maps for low-context workers.
    - JavaScript/TypeScript bounded slices now emit repository-local `internal` edges for relative `import`, re-export, dynamic `import()`, and `require()` specifiers when they resolve to existing source files or index modules.
    - Continue adding optional Tree-sitter or AST-based extractors for Python/JS/TS.
-   - Extract function calls, classes, route declarations, decorators, SQL/table references, and config keys with source spans.
+   - Continue extracting richer route declarations, decorators, SQL/table references, and config keys with source spans.
 
 2. **Graph/community layer**
    - Store edges as JSONL.
