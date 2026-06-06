@@ -379,6 +379,33 @@ def create_map():
     assert ("POST /maps", 9, "high") in route_edges
 
 
+def test_summary_expands_python_route_methods_keyword_into_interface_edges(tmp_path: Path):
+    write(
+        tmp_path / "src" / "web.py",
+        """
+from flask import Flask
+
+app = Flask(__name__)
+
+@app.route("/maps", methods=["GET", "POST"])
+def maps():
+    return "ok"
+
+@app.route("/health")
+def health():
+    return "ok"
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["src/web.py"], component="web")
+
+    route_edges = {(edge.target, edge.source_line, edge.confidence) for edge in summary.edges if edge.kind == "route"}
+    assert ("GET /maps", 5, "high") in route_edges
+    assert ("POST /maps", 5, "high") in route_edges
+    assert ("GET /health", 9, "high") in route_edges
+    assert ("/maps", 5, "high") not in route_edges
+
+
 def test_summary_emits_internal_edges_for_javascript_and_typescript_relative_imports(tmp_path: Path):
     write(tmp_path / "src" / "routes" / "helpers.ts", "export function normalizeRoute() { return 'ok' }\n")
     write(tmp_path / "src" / "routes" / "shared" / "index.ts", "export const shared = true\n")

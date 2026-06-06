@@ -163,6 +163,23 @@ def _literal_string(node: ast.AST) -> str | None:
     return None
 
 
+def _literal_string_list(node: ast.AST) -> list[str]:
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return [value for element in node.elts if (value := _literal_string(element))]
+    value = _literal_string(node)
+    return [value] if value else []
+
+
+def _route_methods(decorator: ast.Call, decorator_method: str) -> list[str]:
+    if decorator_method != "route":
+        return [decorator_method.upper()]
+    for keyword in decorator.keywords:
+        if keyword.arg == "methods":
+            methods = [method.upper() for method in _literal_string_list(keyword.value)]
+            return methods or ["GET"]
+    return ["GET"]
+
+
 def _python_route_edges(path: Path, root: Path, text: str) -> list[Edge]:
     try:
         tree = ast.parse(text)
@@ -188,12 +205,13 @@ def _python_route_edges(path: Path, root: Path, text: str) -> list[Edge]:
             route_path = _literal_string(decorator.args[0])
             if not route_path:
                 continue
-            target = route_path if method == "route" else f"{method.upper()} {route_path}"
-            key = (target, getattr(decorator, "lineno", None))
-            if key in seen:
-                continue
-            routes.append(Edge("route", rel, target, "high", getattr(decorator, "lineno", None)))
-            seen.add(key)
+            for route_method in _route_methods(decorator, method):
+                target = f"{route_method} {route_path}"
+                key = (target, getattr(decorator, "lineno", None))
+                if key in seen:
+                    continue
+                routes.append(Edge("route", rel, target, "high", getattr(decorator, "lineno", None)))
+                seen.add(key)
     return routes
 
 
