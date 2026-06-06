@@ -216,23 +216,23 @@ def _python_route_edges(path: Path, root: Path, text: str) -> list[Edge]:
     return routes
 
 
-def _python_internal_dependencies(root: Path, path: Path, text: str) -> list[str]:
+def _python_internal_dependencies(root: Path, path: Path, text: str) -> list[tuple[str, int | None]]:
     try:
         tree = ast.parse(text)
     except SyntaxError:
         return []
 
-    targets: list[str] = []
+    targets: list[tuple[str, int | None]] = []
     seen: set[str] = set()
 
-    def add(module: str | None) -> bool:
+    def add(module: str | None, line_number: int | None) -> bool:
         if not module:
             return False
         target = _module_to_repo_path(root, module)
         if not target:
             return False
         if target not in seen:
-            targets.append(target)
+            targets.append((target, line_number))
             seen.add(target)
         return True
 
@@ -242,14 +242,14 @@ def _python_internal_dependencies(root: Path, path: Path, text: str) -> list[str
         for alias in node.names:
             if alias.name == "*" or not base_module:
                 continue
-            found_imported_submodule = add(f"{base_module}.{alias.name}") or found_imported_submodule
+            found_imported_submodule = add(f"{base_module}.{alias.name}", getattr(node, "lineno", None)) or found_imported_submodule
         if not found_imported_submodule:
-            add(base_module)
+            add(base_module, getattr(node, "lineno", None))
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                add(alias.name)
+                add(alias.name, getattr(node, "lineno", None))
         elif isinstance(node, ast.ImportFrom):
             add_import_from(node)
     return targets
@@ -273,14 +273,15 @@ def _relative_js_target(root: Path, path: Path, specifier: str) -> str | None:
     return None
 
 
-def _javascript_internal_dependencies(root: Path, path: Path, text: str) -> list[str]:
-    targets: list[str] = []
+def _javascript_internal_dependencies(root: Path, path: Path, text: str) -> list[tuple[str, int | None]]:
+    targets: list[tuple[str, int | None]] = []
     seen: set[str] = set()
-    for specifier in JS_IMPORT_RE.findall(text):
-        target = _relative_js_target(root, path, specifier)
-        if target and target not in seen:
-            targets.append(target)
-            seen.add(target)
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        for specifier in JS_IMPORT_RE.findall(line):
+            target = _relative_js_target(root, path, specifier)
+            if target and target not in seen:
+                targets.append((target, line_number))
+                seen.add(target)
     return targets
 
 
@@ -328,11 +329,11 @@ def summarize_component(root: Path | str, paths: list[Path | str], component: st
         if kind == "code" and path.suffix == ".py":
             edges.extend(_python_call_edges(path, root, text))
             edges.extend(_python_route_edges(path, root, text))
-            for target in _python_internal_dependencies(root, path, text):
-                edges.append(Edge("internal", rel, target, "high"))
+            for target, line_number in _python_internal_dependencies(root, path, text):
+                edges.append(Edge("internal", rel, target, "high", line_number))
         if kind == "code" and path.suffix.lower() in {".js", ".jsx", ".ts", ".tsx"}:
-            for target in _javascript_internal_dependencies(root, path, text):
-                edges.append(Edge("internal", rel, target, "high"))
+            for target, line_number in _javascript_internal_dependencies(root, path, text):
+                edges.append(Edge("internal", rel, target, "high", line_number))
         if kind == "config":
             inputs.append(f"configuration: {rel}")
         if kind == "document":

@@ -306,10 +306,12 @@ def export_invoice():
 
     summary = summarize_component(tmp_path, ["src/billing/export.py"], component="billing/export")
 
-    internal_targets = {edge.target for edge in summary.edges if edge.kind == "internal"}
-    assert "src/billing/helpers.py" in internal_targets
-    assert "src/billing/settings.py" in internal_targets
-    assert "json" not in internal_targets
+    internal_edges = {edge.target: edge for edge in summary.edges if edge.kind == "internal"}
+    assert "src/billing/helpers.py" in internal_edges
+    assert internal_edges["src/billing/helpers.py"].source_line == 1
+    assert "src/billing/settings.py" in internal_edges
+    assert internal_edges["src/billing/settings.py"].source_line == 2
+    assert "json" not in internal_edges
 
 
 def test_summary_emits_internal_edges_for_python_from_imported_submodules(tmp_path: Path):
@@ -475,11 +477,14 @@ export async function handler() {
 
     summary = summarize_component(tmp_path, ["src/routes/app.ts"], component="routes/app")
 
-    internal_targets = {edge.target for edge in summary.edges if edge.kind == "internal"}
-    assert "src/routes/helpers.ts" in internal_targets
-    assert "src/routes/shared/index.ts" in internal_targets
-    assert "src/routes/legacy.js" in internal_targets
-    assert "express" not in internal_targets
+    internal_edges = {edge.target: edge for edge in summary.edges if edge.kind == "internal"}
+    assert "src/routes/helpers.ts" in internal_edges
+    assert internal_edges["src/routes/helpers.ts"].source_line == 1
+    assert "src/routes/shared/index.ts" in internal_edges
+    assert internal_edges["src/routes/shared/index.ts"].source_line == 2
+    assert "src/routes/legacy.js" in internal_edges
+    assert internal_edges["src/routes/legacy.js"].source_line == 3
+    assert "express" not in internal_edges
 
 
 def test_cli_prompt_update_mentions_living_system_changes():

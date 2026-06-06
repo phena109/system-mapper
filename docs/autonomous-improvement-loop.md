@@ -48,7 +48,7 @@ The first research pass found these durable directions:
    - JavaScript/TypeScript entry-point extraction now recognises exported classes, exported functions, and common `const`/`let`/`var` function or arrow-function declarations so bounded slices expose TypeScript route/controller/helper entry points instead of only dependency edges.
    - Continue adding optional Tree-sitter or AST-based extractors for Python/JS/TS.
    - Continue extracting richer route declarations, decorators, SQL/table references, and config keys with source spans.
-   - Initial edge source spans: external URL, data-store, cron-trigger, and Python call edges now carry deterministic `source_line` citations where detected so low-context workers can jump from map edges back to evidence.
+   - Initial edge source spans: external URL, data-store, cron-trigger, Python call, and Python/JavaScript/TypeScript internal dependency edges now carry deterministic `source_line` citations where detected so low-context workers can jump from map edges back to evidence.
    - Python web-route decorators such as FastAPI/Flask-style `@router.get("/path")`, `@app.post("/path")`, and Flask-style `@app.route("/path", methods=[...])` now emit high-confidence `route` edges with source-line citations and HTTP methods, improving interface maps for API slices.
 
 2. **Graph/community layer**
