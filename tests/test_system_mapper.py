@@ -357,6 +357,30 @@ def export_invoice():
     assert "json" not in internal_edges
 
 
+def test_summary_records_evidence_ledger_entries_for_source_line_graph_edges(tmp_path: Path):
+    write(tmp_path / "src" / "billing" / "helpers.py", "def normalize_invoice():\n    return 'ok'\n")
+    write(
+        tmp_path / "src" / "billing" / "api.py",
+        """
+from .helpers import normalize_invoice
+
+def build_invoice():
+    return normalize_invoice()
+
+@router.post("/invoices")
+def create_invoice():
+    return build_invoice()
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["src/billing/api.py"], component="billing/api")
+    ledger = {(record.kind, record.source, record.line_start, record.excerpt) for record in summary.evidence_ledger}
+
+    assert ("internal_edge", "src/billing/api.py", 1, "from .helpers import normalize_invoice") in ledger
+    assert ("route_edge", "src/billing/api.py", 6, '@router.post("/invoices")') in ledger
+    assert ("call_edge", "src/billing/api.py", 8, "return build_invoice()") in ledger
+
+
 def test_summary_emits_internal_edges_for_python_from_imported_submodules(tmp_path: Path):
     write(tmp_path / "src" / "billing" / "__init__.py", "")
     write(tmp_path / "src" / "billing" / "settings.py", "API_URL = 'https://partner.example'\n")

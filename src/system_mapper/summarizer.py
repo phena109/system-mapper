@@ -629,6 +629,19 @@ def summarize_component(root: Path | str, paths: list[Path | str], component: st
         if evidence_ref:
             edge_evidence_refs[(edge.kind, edge.source, edge.target, edge.source_line)] = evidence_ref
 
+    def add_sourced_edge(edge: Edge, freshness: str) -> None:
+        if edge.source_line is None:
+            add_edge(edge)
+            return
+        edge_ref = add_evidence_record(
+            edge.source,
+            edge.source_line,
+            f"{edge.kind}_edge",
+            _line_excerpt(text, edge.source_line),
+            freshness,
+        )
+        add_edge(edge, edge_ref)
+
     for path, rel in zip(resolved, rel_scope):
         text = _safe_read(path)
         kind, _language = classify(path)
@@ -679,21 +692,27 @@ def summarize_component(root: Path | str, paths: list[Path | str], component: st
                 add_edge(Edge("data_store", rel, table, "medium", line_number), table_ref)
                 add_claim("data_contract", f"{name} reads or writes data store/table {table}", "medium", [table_ref])
         if kind == "code" and path.suffix == ".py":
-            edges.extend(_python_call_edges(path, root, text))
-            edges.extend(_python_route_edges(path, root, text))
+            for edge in _python_call_edges(path, root, text):
+                add_sourced_edge(edge, freshness)
+            for edge in _python_route_edges(path, root, text):
+                add_sourced_edge(edge, freshness)
             for target, line_number in _python_internal_dependencies(root, path, text):
-                edges.append(Edge("internal", rel, target, "high", line_number))
+                add_sourced_edge(Edge("internal", rel, target, "high", line_number), freshness)
         if kind == "code" and path.suffix.lower() in {".js", ".jsx", ".ts", ".tsx"}:
-            edges.extend(_javascript_call_edges(path, root, text))
-            edges.extend(_javascript_route_edges(path, root, text))
+            for edge in _javascript_call_edges(path, root, text):
+                add_sourced_edge(edge, freshness)
+            for edge in _javascript_route_edges(path, root, text):
+                add_sourced_edge(edge, freshness)
             for target, line_number in _javascript_internal_dependencies(root, path, text):
-                edges.append(Edge("internal", rel, target, "high", line_number))
+                add_sourced_edge(Edge("internal", rel, target, "high", line_number), freshness)
         if kind == "code" and path.suffix.lower() in C_LIKE_EXTS:
-            edges.extend(_c_like_call_edges(path, root, text))
+            for edge in _c_like_call_edges(path, root, text):
+                add_sourced_edge(edge, freshness)
             if path.suffix.lower() == ".php":
-                edges.extend(_php_route_edges(path, root, text))
+                for edge in _php_route_edges(path, root, text):
+                    add_sourced_edge(edge, freshness)
             for target, line_number in _c_like_internal_dependencies(root, path, text):
-                edges.append(Edge("internal", rel, target, "high", line_number))
+                add_sourced_edge(Edge("internal", rel, target, "high", line_number), freshness)
         if kind == "config":
             inputs.append(f"configuration: {rel}")
         if kind == "document":
