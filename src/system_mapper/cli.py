@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .graph_formats import render_dot, render_mermaid
 from .inventory import build_inventory
+from .merge import merge_component_summaries
 from .packet import build_work_packet
 from .planner import DEFAULT_TOKEN_LIMIT, build_slice_plan
 from .prompts import build_prompt
@@ -39,6 +40,11 @@ def cmd_update(args: argparse.Namespace) -> None:
     previous = json.loads(Path(args.previous_summary).read_text(encoding="utf-8"))
     diff = Path(args.diff).read_text(encoding="utf-8") if args.diff != "-" else sys.stdin.read()
     emit(update_summary_from_diff(previous, diff), args.json)
+
+
+def cmd_merge(args: argparse.Namespace) -> None:
+    summaries = [json.loads(Path(path).read_text(encoding="utf-8")) for path in args.summary_files]
+    emit(merge_component_summaries(summaries, args.component), args.json)
 
 
 def cmd_graph(args: argparse.Namespace) -> None:
@@ -120,6 +126,12 @@ def build_parser() -> argparse.ArgumentParser:
     up.add_argument("diff", help="Diff file path, or - for stdin")
     up.add_argument("--json", action="store_true")
     up.set_defaults(func=cmd_update)
+
+    merge = sub.add_parser("merge", help="Merge lower-level JSON summaries into an upward system map while preserving claims and conflicts.")
+    merge.add_argument("summary_files", nargs="+")
+    merge.add_argument("--component")
+    merge.add_argument("--json", action="store_true")
+    merge.set_defaults(func=cmd_merge)
 
     graph = sub.add_parser("graph", help="Emit slice dependency/data-flow edges as JSONL or Mermaid records.")
     graph.add_argument("root")

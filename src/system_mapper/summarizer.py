@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 from .inventory import classify
-from .models import ComponentSummary, Edge, Evidence
+from .models import Claim, ComponentSummary, Edge, Evidence, EvidenceRecord
 
 URL_RE = re.compile(r"https?://[^\s'\"),}]+")
 FUNC_RE = re.compile(
@@ -58,6 +58,7 @@ C_INCLUDE_RE = re.compile(r"^\s*#\s*include\s+[\"<]([^\">]+)[\">]", re.M)
 CRON_RE = re.compile(r"(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)")
 MANUAL_RE = re.compile(r"\b(manual|human|admin|operator|retry|runbook|ask|approval)\b", re.I)
 BUSINESS_RE = re.compile(r"\b(rule|must|cannot|should|policy|approval|required|limit|threshold)\b", re.I)
+OWNER_RE = re.compile(r"\bowner\s*:\s*([^\n#]+)", re.I)
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "options", "head", "route"}
 
 
@@ -116,6 +117,29 @@ def _sentence_with(text: str, pattern: re.Pattern[str]) -> str:
         if pattern.search(line):
             return line.strip()[:240]
     return ""
+
+
+def _line_with(text: str, pattern: re.Pattern[str]) -> tuple[int, str] | None:
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if pattern.search(line):
+            return line_number, line.strip()[:240]
+    return None
+
+
+def _line_excerpt(text: str, line_number: int) -> str:
+    lines = text.splitlines() or [""]
+    if line_number < 1 or line_number > len(lines):
+        return ""
+    return lines[line_number - 1].strip()[:240]
+
+
+def _stable_id(prefix: str, *parts: object) -> str:
+    joined = "\0".join(str(part) for part in parts)
+    return f"{prefix}-{hashlib.sha256(joined.encode('utf-8')).hexdigest()[:12]}"
+
+
+def _claim_id(component: str, claim_type: str, text: str, evidence_refs: list[str]) -> str:
+    return _stable_id("claim", component, claim_type, text, ",".join(evidence_refs))
 
 
 def _tables(text: str) -> list[str]:
@@ -561,6 +585,9 @@ def summarize_component(root: Path | str, paths: list[Path | str], component: st
     name = component or (rel_scope[0] if len(rel_scope) == 1 else root.name)
 
     evidence: list[Evidence] = []
+    evidence_ledger: list[EvidenceRecord] = []
+    claims: list[Claim] = []
+    edge_evidence_refs: dict[tuple[str, str, str, int | None], str] = {}
     edges: list[Edge] = []
     entry_points: list[str] = []
     inputs: list[str] = []
@@ -569,9 +596,44 @@ def summarize_component(root: Path | str, paths: list[Path | str], component: st
     human_steps: list[str] = []
     suggested_next: list[str] = []
 
+    def add_evidence_record(rel: str, line_number: int | None, kind: str, excerpt: str, freshness: str) -> str:
+        line_start = max(line_number or 1, 1)
+        source_key = f"{rel}:{line_start}:{kind}:{excerpt}"
+        record_id = _stable_id("ev", source_key, freshness)
+        if not any(record.id == record_id for record in evidence_ledger):
+            evidence_ledger.append(
+                EvidenceRecord(
+                    id=record_id,
+                    source=rel,
+                    line_start=line_start,
+                    line_end=line_start,
+                    kind=kind,
+                    excerpt=excerpt,
+                    freshness=freshness,
+                )
+            )
+        return record_id
+
+    def add_claim(claim_type: str, text: str, confidence: str, evidence_refs: list[str]) -> None:
+        refs = [ref for ref in evidence_refs if ref]
+        if not refs and evidence_ledger:
+            refs = [evidence_ledger[0].id]
+        if not refs:
+            return
+        claim = Claim(_claim_id(name, claim_type, text, refs), claim_type, text, confidence, refs)
+        if not any(existing.id == claim.id for existing in claims):
+            claims.append(claim)
+
+    def add_edge(edge: Edge, evidence_ref: str | None = None) -> None:
+        edges.append(edge)
+        if evidence_ref:
+            edge_evidence_refs[(edge.kind, edge.source, edge.target, edge.source_line)] = evidence_ref
+
     for path, rel in zip(resolved, rel_scope):
         text = _safe_read(path)
         kind, _language = classify(path)
+        freshness = _content_revision(text)
+        file_ref = add_evidence_record(rel, 1, kind, _line_excerpt(text, 1) or rel, freshness)
         if kind == "code" and path.suffix == ".py":
             symbols = _python_symbols(text)
         elif kind == "code" and path.suffix.lower() in C_LIKE_EXTS:
@@ -582,21 +644,40 @@ def summarize_component(root: Path | str, paths: list[Path | str], component: st
         if symbols:
             entry_points.extend(f"{rel}:{symbol}" for symbol in symbols[:8])
             note_parts.append("symbols: " + ", ".join(symbols[:8]))
-        manual = _sentence_with(text, MANUAL_RE)
+            add_claim("purpose", f"{rel} exposes code entry points: " + ", ".join(symbols[:3]), "medium", [file_ref])
+        manual_match = _line_with(text, MANUAL_RE)
+        manual = manual_match[1] if manual_match else ""
         if manual:
             human_steps.append(f"{rel}: {manual}")
             note_parts.append(manual)
-        business = _sentence_with(text, BUSINESS_RE)
+            manual_ref = add_evidence_record(rel, manual_match[0], "human_step", manual, freshness) if manual_match else file_ref
+            add_claim("human_step", f"Manual or operator process observed in {rel}: {manual}", "medium", [manual_ref])
+        business_match = _line_with(text, BUSINESS_RE)
+        business = business_match[1] if business_match else ""
         if business:
             business_rules.append(f"{rel}: {business}")
+            business_ref = add_evidence_record(rel, business_match[0], "business_rule", business, freshness) if business_match else file_ref
+            add_claim("business_rule", f"Business rule in {rel}: {business}", "medium", [business_ref])
+        owner_match = _line_with(text, OWNER_RE)
+        if owner_match:
+            owner_text = OWNER_RE.search(owner_match[1])
+            owner = owner_text.group(1).strip(" .#") if owner_text else owner_match[1]
+            owner_ref = add_evidence_record(rel, owner_match[0], "owner", owner_match[1], freshness)
+            add_claim("owner", f"Owner for {name}: {owner}", "medium", [owner_ref])
         cron_line = _first_match_line(text, CRON_RE)
         if cron_line is not None:
-            edges.append(Edge("trigger", rel, "cron schedule", "medium", cron_line))
+            trigger_ref = add_evidence_record(rel, cron_line, "trigger", _line_excerpt(text, cron_line), freshness)
+            add_edge(Edge("trigger", rel, "cron schedule", "medium", cron_line), trigger_ref)
+            add_claim("trigger", f"{rel} declares a cron trigger", "medium", [trigger_ref])
         for url, line_number in _urls_with_lines(text):
-            edges.append(Edge("external", rel, url, "high" if kind == "code" else "medium", line_number))
+            url_ref = add_evidence_record(rel, line_number, "external", _line_excerpt(text, line_number), freshness)
+            add_edge(Edge("external", rel, url, "high" if kind == "code" else "medium", line_number), url_ref)
+            add_claim("external_dependency", f"{name} references external system {url}", "high" if kind == "code" else "medium", [url_ref])
         for table, line_number in _tables_with_lines(text):
             if table.lower() not in {"table", "from", "join", "def", "function"}:
-                edges.append(Edge("data_store", rel, table, "medium", line_number))
+                table_ref = add_evidence_record(rel, line_number, "data_contract", _line_excerpt(text, line_number), freshness)
+                add_edge(Edge("data_store", rel, table, "medium", line_number), table_ref)
+                add_claim("data_contract", f"{name} reads or writes data store/table {table}", "medium", [table_ref])
         if kind == "code" and path.suffix == ".py":
             edges.extend(_python_call_edges(path, root, text))
             edges.extend(_python_route_edges(path, root, text))
@@ -617,7 +698,7 @@ def summarize_component(root: Path | str, paths: list[Path | str], component: st
             inputs.append(f"configuration: {rel}")
         if kind == "document":
             suggested_next.append(f"Check code/config that implements claims in {rel}")
-        evidence.append(Evidence(rel, kind, symbols, "; ".join(note_parts), _content_revision(text)))
+        evidence.append(Evidence(rel, kind, symbols, "; ".join(note_parts), freshness))
 
     purpose = "Evidence-backed component map for " + name
     if entry_points:
@@ -648,6 +729,18 @@ def summarize_component(root: Path | str, paths: list[Path | str], component: st
         "operational_process": "medium" if human_steps else "low",
     }
 
+    first_ref = evidence_ledger[0].id if evidence_ledger else ""
+    add_claim("purpose", purpose, confidence["purpose"], [first_ref])
+    for risk in risks:
+        risk_refs = [
+            edge_evidence_refs[key]
+            for key in edge_evidence_refs
+            if key[0] in {"external", "data_store", "trigger"}
+        ] or [first_ref]
+        add_claim("risk", risk, "medium", risk_refs[:5])
+    for unknown in unknowns:
+        add_claim("unknown", unknown, "low", [first_ref])
+
     return ComponentSummary(
         component=name,
         scope=rel_scope,
@@ -663,4 +756,6 @@ def summarize_component(root: Path | str, paths: list[Path | str], component: st
         unknowns=unknowns,
         suggested_next=suggested_next,
         confidence=confidence,
+        claims=claims,
+        evidence_ledger=evidence_ledger,
     )

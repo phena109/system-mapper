@@ -78,6 +78,30 @@ def update_summary_from_diff(previous: dict[str, Any], diff: str) -> ChangeUpdat
             downstream.append(str(edge["target"]))
 
     unknowns = ["Heuristic diff analysis cannot prove runtime behaviour; re-run component slice summaries for changed files"]
+    ledger_sources_by_id = {
+        record.get("id"): record.get("source", "")
+        for record in previous.get("evidence_ledger", [])
+        if isinstance(record, dict)
+    }
+    stale_claims: list[dict[str, str]] = []
+    for claim in previous.get("claims", []):
+        if not isinstance(claim, dict):
+            continue
+        claim_sources = {
+            ledger_sources_by_id.get(ref, "")
+            for ref in claim.get("evidence_refs", [])
+            if isinstance(ref, str)
+        }
+        touched_sources = sorted(source for source in claim_sources if source in changed_files)
+        if not touched_sources:
+            continue
+        stale_claims.append(
+            {
+                "claim_id": str(claim.get("id", "")),
+                "type": str(claim.get("type", "")),
+                "reason": "Evidence source changed: " + ", ".join(touched_sources),
+            }
+        )
     changelog_details = behaviour_changes[:3] or interface_changes[:3] or edge_changes[:3] or ["No heuristic changes detected"]
     changelog_entry = f"{component}: changed {len(changed_files)} file(s); " + "; ".join(changelog_details)
     return ChangeUpdate(
@@ -90,4 +114,5 @@ def update_summary_from_diff(previous: dict[str, Any], diff: str) -> ChangeUpdat
         downstream[:20],
         unknowns,
         changelog_entry,
+        stale_claims,
     )

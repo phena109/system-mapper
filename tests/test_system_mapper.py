@@ -903,3 +903,123 @@ def test_cli_plan_emits_json_with_strategy_and_output_layout(tmp_path: Path):
     assert payload["output_layout"] == "1-level"
     assert payload["slices"][0]["paths"] == ["src/app.py"]
     assert payload["slices"][0]["output_locations"]["packet"].endswith(".json")
+
+
+def test_summary_builds_durable_claims_with_evidence_ledger_refs(tmp_path: Path):
+    write(
+        tmp_path / "src" / "billing.py",
+        """
+INVOICE_TABLE = "invoices"
+PARTNER_URL = "https://partner.example/export"
+
+# Owner: Billing Ops
+# Business rule: invoices must be approved before export.
+def export_invoice(invoice_id):
+    return PARTNER_URL
+""".strip(),
+    )
+    write(
+        tmp_path / "ops" / "billing.cron",
+        "0 2 * * * python -m billing.export\n# Manual retry requires operator approval.\n",
+    )
+
+    summary = summarize_component(tmp_path, ["src/billing.py", "ops/billing.cron"], component="billing/export")
+    payload = summary.to_dict()
+
+    ledger_by_id = {record["id"]: record for record in payload["evidence_ledger"]}
+    claims = payload["claims"]
+    claim_types = {claim["type"] for claim in claims}
+
+    assert {"purpose", "data_contract", "trigger", "business_rule", "owner", "risk", "unknown"} <= claim_types
+    assert any(claim["type"] == "trigger" and "cron" in claim["text"] for claim in claims)
+    assert any(claim["type"] == "data_contract" and "invoices" in claim["text"] for claim in claims)
+    assert any(claim["type"] == "owner" and "Billing Ops" in claim["text"] for claim in claims)
+    assert all(claim["evidence_refs"] for claim in claims)
+    assert all(ref in ledger_by_id for claim in claims for ref in claim["evidence_refs"])
+    assert all(record["source"] and record["line_start"] >= 1 and record["line_end"] >= record["line_start"] for record in ledger_by_id.values())
+    assert all(record["freshness"].startswith("sha256:") for record in ledger_by_id.values())
+
+
+def test_packet_exposes_claim_records_and_evidence_ledger_for_low_context_workers(tmp_path: Path):
+    write(tmp_path / "src" / "billing.py", 'INVOICE_TABLE = "invoices"\ndef export_invoice():\n    return "ok"\n')
+
+    packet = build_work_packet(tmp_path, ["src/billing.py"], component="billing/export")
+
+    assert packet["contract"] == "system-mapper.work-packet.v1"
+    assert packet["claim_records"] == packet["summary"]["claims"]
+    assert packet["evidence_ledger"] == packet["summary"]["evidence_ledger"]
+    assert packet["next_actions"][0].startswith("Inspect or answer unknown") or "claim" in packet["next_actions"][0].lower()
+
+
+def test_update_marks_claims_stale_when_their_evidence_sources_change(tmp_path: Path):
+    write(tmp_path / "src" / "billing.py", 'INVOICE_TABLE = "invoices"\ndef export_invoice():\n    return "ok"\n')
+    previous = summarize_component(tmp_path, ["src/billing.py"], component="billing/export").to_dict()
+    data_contract_claim = next(claim for claim in previous["claims"] if claim["type"] == "data_contract")
+    diff = """
+diff --git a/src/billing.py b/src/billing.py
+--- a/src/billing.py
++++ b/src/billing.py
+@@ -1,2 +1,2 @@
+-INVOICE_TABLE = "invoices"
++INVOICE_TABLE = "archived_invoices"
+ def export_invoice():
+""".strip()
+
+    update = update_summary_from_diff(previous, diff).to_dict()
+
+    assert any(stale["claim_id"] == data_contract_claim["id"] for stale in update["stale_claims"])
+    assert any("src/billing.py" in stale["reason"] for stale in update["stale_claims"])
+    assert "Heuristic diff analysis cannot prove runtime behaviour; re-run component slice summaries for changed files" in update["unknowns"]
+
+
+def test_merge_preserves_claims_evidence_and_conflicts_for_upward_summaries(tmp_path: Path):
+    from system_mapper.merge import merge_component_summaries
+
+    write(tmp_path / "billing" / "export.py", '# Owner: Billing Ops\ndef export_invoice():\n    return "ok"\n')
+    write(tmp_path / "billing" / "docs.md", "Owner: Finance Ops\nManual retry requires approval.\n")
+    code_summary = summarize_component(tmp_path, ["billing/export.py"], component="billing/code").to_dict()
+    doc_summary = summarize_component(tmp_path, ["billing/docs.md"], component="billing/docs").to_dict()
+
+    merged = merge_component_summaries([code_summary, doc_summary], component="billing").to_dict()
+
+    assert merged["component"] == "billing"
+    assert set(merged["scope"]) == {"billing/code", "billing/docs"}
+    assert len(merged["claims"]) >= len(code_summary["claims"]) + len(doc_summary["claims"])
+    assert {record["id"] for record in code_summary["evidence_ledger"]} <= {record["id"] for record in merged["evidence_ledger"]}
+    assert any("owner" in conflict.lower() and "Billing Ops" in conflict and "Finance Ops" in conflict for conflict in merged["conflicts"])
+
+
+def test_cli_merge_combines_summary_files_as_json(tmp_path: Path):
+    write(tmp_path / "src" / "app.py", "def main():\n    return 'ok'\n")
+    write(tmp_path / "docs" / "app.md", "Manual operation requires review.\n")
+    code_summary = summarize_component(tmp_path, ["src/app.py"], component="app/code").to_dict()
+    doc_summary = summarize_component(tmp_path, ["docs/app.md"], component="app/docs").to_dict()
+    code_path = tmp_path / "code-summary.json"
+    doc_path = tmp_path / "doc-summary.json"
+    code_path.write_text(json.dumps(code_summary), encoding="utf-8")
+    doc_path.write_text(json.dumps(doc_summary), encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "system_mapper.cli",
+            "merge",
+            str(code_path),
+            str(doc_path),
+            "--component",
+            "app",
+            "--json",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    merged = json.loads(result.stdout)
+    assert merged["component"] == "app"
+    assert merged["scope"] == ["app/code", "app/docs"]
+    assert merged["claims"]
+    assert merged["evidence_ledger"]

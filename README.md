@@ -14,8 +14,9 @@ It is designed around the approach discussed for weak / low-context AI:
 ## Current MVP capabilities
 
 - `inventory`: classify files as code, document, config, or other, while skipping dependency/build directories.
-- `slice`: produce a bounded component summary with evidence, entry points, detected Python call edges, Python web-route decorator edges, JavaScript/TypeScript exported function/class/arrow-function entry points, Python, JavaScript/TypeScript, and Go internal dependencies, Go declarations and same-file call edges, PHP and C-like symbols/calls/includes, PHP route edges, external/data-store/trigger edges, human/manual hints, risks, unknowns, and confidence scores.
-- `update`: compare a previous JSON summary with a git diff and report changed files, likely behaviour changes, added Python route interfaces, edge changes, possibly stale docs, downstream areas to reinspect, and a changelog entry.
+- `slice`: produce a bounded component summary with evidence, a line-addressable `evidence_ledger`, durable typed `claims`, entry points, detected Python call edges, Python web-route decorator edges, JavaScript/TypeScript exported function/class/arrow-function entry points, Python, JavaScript/TypeScript, and Go internal dependencies, Go declarations and same-file call edges, PHP and C-like symbols/calls/includes, PHP route edges, external/data-store/trigger edges, human/manual hints, risks, unknowns, and confidence scores.
+- `update`: compare a previous JSON summary with a git diff and report changed files, likely behaviour changes, added Python route interfaces, edge changes, stale claim IDs whose evidence sources changed, possibly stale docs, downstream areas to reinspect, and a changelog entry.
+- `merge`: recursively merge lower-level JSON summaries into an upward component/system summary while preserving claims, evidence ledger records, unknowns, and explicit conflicts.
 - `graph`: emit dependency/data-flow edges from a bounded slice as JSONL records (including source line citations when detected) for recursive merge, clustering, or downstream map tooling, or as Mermaid / Graphviz DOT diagrams for quick visual review.
 - `packet`: package a bounded slice summary, evidence, edges, unknowns, next actions, and the low-context AI prompt contract as JSON.
 - `plan`: choose bounded next slices with a default 45,000-token limit, selectable ordering strategy, planned output locations, and a rationale for why each slice is useful for a low-context worker.
@@ -89,6 +90,16 @@ uv run system-mapper slice /path/to/repo \
   src/billing.py docs/billing.md config/schedule.yml \
   --component billing/export \
   --json > .system-map/components/billing-export.json
+```
+
+Merge lower-level summaries upward while keeping claims and conflicts reviewable:
+
+```bash
+uv run system-mapper merge \
+  .system-map/components/billing-code.json \
+  .system-map/components/billing-docs.json \
+  --component billing \
+  --json > .system-map/components/billing.json
 ```
 
 Analyse a merge/change diff against an existing summary:
@@ -168,6 +179,9 @@ Each component summary is intended to answer:
 
 - component name and inspected scope;
 - observed evidence by source type and content revision;
+- line-addressable `evidence_ledger` records with deterministic IDs;
+- durable typed `claims` (`purpose`, `data_contract`, `trigger`, `business_rule`, `owner`, `risk`, `unknown`, etc.) that cite ledger IDs;
+- merge-time `conflicts` that preserve contradictory lower-level claims instead of smoothing them over;
 - purpose, entry points, inputs, outputs;
 - data stores, external systems, triggers;
 - business rules and human/manual steps;

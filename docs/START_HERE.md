@@ -84,6 +84,8 @@ Start with the component summary JSON:
 
 - `scope` says exactly what was inspected. Claims outside this scope are suspect.
 - `evidence` records source files, detected symbols, notes, and content revisions.
+- `evidence_ledger` gives deterministic evidence IDs with file and line spans; durable `claims` cite those IDs.
+- `conflicts` preserves contradictory lower-level claims after `merge` instead of pretending they agree.
 - `entry_points`, `inputs`, `outputs`, `edges`, and `external_systems` are observed hints, not a complete architecture proof.
 - `unknowns` are useful work items, not failures.
 - `confidence` tells you which parts deserve human review before being treated as reliable.
@@ -107,8 +109,18 @@ After one slice works:
 1. process the next few planned slices;
 2. name components consistently (`billing/export`, `docs/onboarding`, `ops/scheduler`);
 3. preserve unknowns instead of filling them with guesses;
-4. merge only evidence-backed lower-level summaries into higher-level maps;
-5. rerun `update` when a diff may make old summaries stale.
+4. merge only evidence-backed lower-level summaries into higher-level maps with `system-mapper merge`;
+5. rerun `update` when a diff may make old summaries or claim IDs stale.
+
+For upward merging:
+
+```bash
+uv run system-mapper merge \
+  .system-map/components/app-code.json \
+  .system-map/components/app-docs.json \
+  --component app \
+  --json > .system-map/components/app.json
+```
 
 For change review:
 

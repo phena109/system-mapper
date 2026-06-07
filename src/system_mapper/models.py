@@ -32,6 +32,26 @@ class Evidence:
 
 
 @dataclass
+class EvidenceRecord:
+    id: str
+    source: str
+    line_start: int
+    line_end: int
+    kind: str
+    excerpt: str
+    freshness: str
+
+
+@dataclass
+class Claim:
+    id: str
+    type: str
+    text: str
+    confidence: str
+    evidence_refs: list[str] = field(default_factory=list)
+
+
+@dataclass
 class Edge:
     kind: str
     source: str
@@ -56,6 +76,9 @@ class ComponentSummary:
     unknowns: list[str]
     suggested_next: list[str]
     confidence: dict[str, str]
+    claims: list[Claim] = field(default_factory=list)
+    evidence_ledger: list[EvidenceRecord] = field(default_factory=list)
+    conflicts: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -72,6 +95,7 @@ class ChangeUpdate:
     downstream_to_reinspect: list[str]
     unknowns: list[str]
     changelog_entry: str
+    stale_claims: list[dict[str, str]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -18,7 +18,7 @@ def _next_actions(summary_dict: dict[str, Any]) -> list[str]:
     for suggestion in summary_dict.get("suggested_next", [])[:5]:
         actions.append(suggestion)
     if not actions:
-        actions.append("Review evidence, edges, and confidence before merging this slice into a higher-level map")
+        actions.append("Review evidence, claim records, edges, and confidence before merging this slice into a higher-level map")
     return actions[:8]
 
 
@@ -39,6 +39,8 @@ def build_work_packet(root: Path | str, paths: list[Path | str], component: str 
         "prompt": slice_prompt(summary.component),
         "summary": summary_dict,
         "edge_records": edge_records,
+        "claim_records": list(summary_dict.get("claims", [])),
+        "evidence_ledger": list(summary_dict.get("evidence_ledger", [])),
         "unknowns": list(summary.unknowns),
         "next_actions": _next_actions(summary_dict),
     }
