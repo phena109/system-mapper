@@ -578,11 +578,28 @@ def _php_route_edges(path: Path, root: Path, text: str) -> list[Edge]:
     return routes
 
 
-def summarize_component(root: Path | str, paths: list[Path | str], component: str | None = None) -> ComponentSummary:
-    root = Path(root).resolve()
-    resolved = [(Path(p) if Path(p).is_absolute() else root / str(p)).resolve() for p in paths]
-    rel_scope = [str(p.relative_to(root)) if p.is_relative_to(root) else str(p) for p in resolved]
-    name = component or (rel_scope[0] if len(rel_scope) == 1 else root.name)
+def summarize_component(root: Path, paths: list[str], component: str, exclude_patterns: list[str] | None = None, exclude_list: list[str] | None = None) -> ComponentSummary:
+    # --- Filtering Logic Start ---
+    if exclude_patterns or exclude_list:
+        print("Applying exclusion filters...") # Debugging aid for implementation tracking
+        # Convert glob patterns to regex-safe strings if necessary, but for now, treat as literal match targets
+        # In a real implementation, glob patterns should be expanded to regexes matching path components.
+        # For this MVP, we check if the full relative path matches any pattern/list item.
+        filtered_paths = []
+        for p in paths:
+            path_str = str(p) # Assuming 'paths' contains Path objects or strings that resolve to them
+            is_excluded = False
+            if exclude_patterns and any(re.search(pattern, path_str) for pattern in exclude_patterns):
+                is_excluded = True
+            if not is_excluded and exclude_list and any(path_str == item for item in exclude_list):
+                is_excluded = True
+
+            if not is_excluded:
+                filtered_paths.append(p)
+        
+        # Replace the original paths with filtered ones for processing downstream
+        paths = filtered_paths
+    # --- Filtering Logic End ---
 
     evidence: list[Evidence] = []
     evidence_ledger: list[EvidenceRecord] = []
