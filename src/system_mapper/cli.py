@@ -5,6 +5,7 @@ import json
 import sys
 from pathlib import Path
 
+from .clusters import cluster_edge_file
 from .graph_formats import render_dot, render_mermaid
 from .inventory import build_inventory
 from .merge import merge_component_summaries
@@ -69,6 +70,10 @@ def cmd_graph(args: argparse.Namespace) -> None:
                 sort_keys=True,
             )
         )
+
+
+def cmd_cluster(args: argparse.Namespace) -> None:
+    emit(cluster_edge_file(args.edge_jsonl), args.json)
 
 
 def cmd_prompt(args: argparse.Namespace) -> None:
@@ -144,6 +149,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Graph output format. Default: jsonl for machine merge; mermaid and dot give text diagrams for review.",
     )
     graph.set_defaults(func=cmd_graph)
+
+    cluster = sub.add_parser("cluster", help="Cluster graph JSONL edges into connected subsystem/community summaries.")
+    cluster.add_argument("edge_jsonl", help="Path to JSONL emitted by `system-mapper graph`.")
+    cluster.add_argument("--json", action="store_true")
+    cluster.set_defaults(func=cmd_cluster)
 
     packet = sub.add_parser("packet", help="Emit a bounded low-context AI work packet as JSON.")
     packet.add_argument("root")

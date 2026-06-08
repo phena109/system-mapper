@@ -18,6 +18,7 @@ It is designed around the approach discussed for weak / low-context AI:
 - `update`: compare a previous JSON summary with a git diff and report changed files, likely behaviour changes, added Python route interfaces, edge changes, stale claim IDs whose evidence sources changed, possibly stale docs, downstream areas to reinspect, and a changelog entry.
 - `merge`: recursively merge lower-level JSON summaries into an upward component/system summary while preserving claims, evidence ledger records, unknowns, and explicit conflicts.
 - `graph`: emit dependency/data-flow edges from a bounded slice as JSONL records (including source line citations when detected) for recursive merge, clustering, or downstream map tooling, or as Mermaid / Graphviz DOT diagrams for quick visual review.
+- `cluster`: group graph JSONL edge records into connected subsystem/community summaries with edge kinds, participating components, hub nodes, and evidence source citations.
 - `packet`: package a bounded slice summary, evidence, edges, unknowns, next actions, and the low-context AI prompt contract as JSON.
 - `plan`: choose bounded next slices with a default 45,000-token limit, selectable ordering strategy, planned output locations, and a rationale for why each slice is useful for a low-context worker.
 - `next`: write the next missing packet, summary, and edge artifacts so a minimal cron loop can safely advance until it reaches `no_change`.
@@ -109,12 +110,13 @@ git diff origin/main...HEAD > /tmp/change.diff
 uv run system-mapper update .system-map/components/billing-export.json /tmp/change.diff --json
 ```
 
-Emit slice edges as JSONL for graph merge/clustering tools, or as Mermaid / Graphviz DOT diagrams for quick human review:
+Emit slice edges as JSONL for graph merge/clustering tools, cluster previously emitted graph edges into subsystem/community summaries, or render as Mermaid / Graphviz DOT diagrams for quick human review:
 
 ```bash
 uv run system-mapper graph /path/to/repo \
   src/billing.py docs/billing.md config/schedule.yml \
   --component billing/export > .system-map/edges/billing-export.jsonl
+uv run system-mapper cluster .system-map/edges/billing-export.jsonl --json
 uv run system-mapper graph /path/to/repo \
   src/billing.py docs/billing.md config/schedule.yml \
   --component billing/export \

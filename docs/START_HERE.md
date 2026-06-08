@@ -27,7 +27,7 @@ uv run system-mapper next /path/to/target --output-layout flat
 If the command returns `outcome: "advanced"`, open the files listed under `artifacts`:
 
 1. Read `summary` first. This is the bounded component summary.
-2. Skim `edges` next. This is JSONL dependency/flow evidence.
+2. Skim `edges` next. This is JSONL dependency/flow evidence. If you have multiple edge files or want a subsystem view, run `uv run system-mapper cluster .system-map/edges/<slice>.jsonl --json` to group connected nodes while preserving source-line evidence.
 3. Give `packet` to a human or low-context AI worker if you want interpretation or follow-up analysis.
 
 Run the same command again to advance to the next missing slice. When it returns `outcome: "no_change"`, the current planned slices already have artifacts.

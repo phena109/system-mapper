@@ -313,6 +313,62 @@ def run_mapping():
     assert result.stdout.splitlines()[-1] == "}"
 
 
+def test_graph_clusters_group_connected_edges_and_preserve_evidence_sources():
+    from system_mapper.clusters import cluster_edge_records
+
+    records = [
+        {"component": "billing/api", "kind": "route", "source": "src/api.py", "target": "POST /invoices", "confidence": "high", "source_line": 10},
+        {"component": "billing/api", "kind": "internal", "source": "src/api.py", "target": "src/service.py", "confidence": "high", "source_line": 2},
+        {"component": "billing/service", "kind": "data_store", "source": "src/service.py", "target": "invoices", "confidence": "medium", "source_line": 4},
+        {"component": "ops/worker", "kind": "trigger", "source": "config/schedule.yml", "target": "cron schedule", "confidence": "medium", "source_line": 1},
+    ]
+
+    report = cluster_edge_records(records)
+
+    assert report["cluster_count"] == 2
+    first = report["clusters"][0]
+    assert first["id"] == "cluster-001"
+    assert first["nodes"] == ["POST /invoices", "invoices", "src/api.py", "src/service.py"]
+    assert first["edge_count"] == 3
+    assert first["edge_kinds"] == ["data_store", "internal", "route"]
+    assert first["components"] == ["billing/api", "billing/service"]
+    assert first["evidence_sources"] == ["src/api.py:2", "src/api.py:10", "src/service.py:4"]
+    assert "src/api.py" in first["hub_nodes"]
+    assert report["clusters"][1]["nodes"] == ["config/schedule.yml", "cron schedule"]
+
+
+def test_cli_cluster_reads_graph_jsonl_and_emits_component_communities(tmp_path: Path):
+    edges = tmp_path / "edges.jsonl"
+    edges.write_text(
+        "\n".join(
+            json.dumps(record)
+            for record in [
+                {"component": "auth/api", "kind": "route", "source": "src/auth/api.py", "target": "POST /login", "confidence": "high", "source_line": 3},
+                {"component": "auth/api", "kind": "internal", "source": "src/auth/api.py", "target": "src/auth/service.py", "confidence": "high", "source_line": 1},
+                {"component": "reports", "kind": "external", "source": "src/reports.py", "target": "https://warehouse.example", "confidence": "high", "source_line": 9},
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-m", "system_mapper.cli", "cluster", str(edges), "--json"],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["input_edges"] == 3
+    assert payload["cluster_count"] == 2
+    assert payload["clusters"][0]["nodes"] == ["POST /login", "src/auth/api.py", "src/auth/service.py"]
+    assert payload["clusters"][0]["components"] == ["auth/api"]
+    assert payload["clusters"][1]["edge_kinds"] == ["external"]
+
+
 def test_summary_does_not_treat_python_imports_as_data_stores(tmp_path: Path):
     write(
         tmp_path / "src" / "imports_only.py",
