@@ -122,6 +122,8 @@ def build_parser() -> argparse.ArgumentParser:
     sl = sub.add_parser("slice", help="Summarise a bounded component from selected files.")
     sl.add_argument("root")
     sl.add_argument("paths", nargs="+")
+sl.add_argument("--exclude", help="Glob pattern(s) for files/folders to exclude from processing.")
+sl.add_argument("--exclude_list", nargs="+", help="Specific list of paths/patterns to exclude.")
     sl.add_argument("--component")
     sl.add_argument("--json", action="store_true")
     sl.set_defaults(func=cmd_slice)
