@@ -70,7 +70,7 @@ def export_invoice(invoice_id):
 def test_summary_evidence_records_content_revision_for_freshness_checks(tmp_path: Path):
     write(tmp_path / "docs" / "billing.md", "# Billing\nInvoice exports run nightly.\n")
 
-    summary = summarize_component(tmp_path, ["docs/billing.md"], component="billing/docs")
+    summary = summarize_component(tmp_path, ["docs/billing.md"], component="billing/docs", resolved={})
 
     assert summary.evidence[0].freshness == "sha256:1051cdbbc1c6"
 
