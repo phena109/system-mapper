@@ -620,7 +620,7 @@ def summarize_component(root: Path | str, paths: list[Path | str], component: st
             refs = [evidence_ledger[0].id]
         if not refs:
             return
-        claim = Claim(_claim_id(name, claim_type, text, refs), claim_type, text, confidence, refs)
+        claim = Claim(_claim_id(name, claim_type, text, refs), claim_type, text, confidence, refs, state="active")
         if not any(existing.id == claim.id for existing in claims):
             claims.append(claim)
 

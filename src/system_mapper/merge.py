@@ -79,6 +79,7 @@ def _claim_from_dict(record: dict[str, Any]) -> Claim:
         text=str(record.get("text", "")),
         confidence=str(record.get("confidence", "medium")),
         evidence_refs=list(record.get("evidence_refs", [])),
+        state=str(record.get("state", "active")),
     )
 
 
