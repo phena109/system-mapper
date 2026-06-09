@@ -19,6 +19,7 @@ It is designed around the approach discussed for weak / low-context AI:
 - `merge`: recursively merge lower-level JSON summaries into an upward component/system summary while preserving claims, evidence ledger records, unknowns, and explicit conflicts.
 - `graph`: emit dependency/data-flow edges from a bounded slice as JSONL records (including source line citations when detected) for recursive merge, clustering, or downstream map tooling, or as Mermaid / Graphviz DOT diagrams for quick visual review.
 - `cluster`: group graph JSONL edge records into connected subsystem/community summaries with edge kinds, participating components, hub nodes, and evidence source citations.
+- `architecture-brief`: produce a human-readable architecture brief from graph JSONL edges — file-to-file relationships ranked by weight, likely entry point, architectural layers (entry/core/leaf), external dependencies, data stores, routes, and triggers. This closes the last gap in the pipeline: `code → edges → clusters → architecture brief`.
 - `packet`: package a bounded slice summary, evidence, edges, unknowns, next actions, and the low-context AI prompt contract as JSON.
 - `plan`: choose bounded next slices with a default 45,000-token limit, selectable ordering strategy, planned output locations, and a rationale for why each slice is useful for a low-context worker.
 - `next`: write the next missing packet, summary, and edge artifacts so a minimal cron loop can safely advance until it reaches `no_change`.
@@ -117,9 +118,11 @@ uv run system-mapper graph /path/to/repo \
   src/billing.py docs/billing.md config/schedule.yml \
   --component billing/export > .system-map/edges/billing-export.jsonl
 uv run system-mapper cluster .system-map/edges/billing-export.jsonl --json
-uv run system-mapper graph /path/to/repo \
-  src/billing.py docs/billing.md config/schedule.yml \
-  --component billing/export \
+uv run system-mapper architecture-brief .system-map/edges/billing-export.jsonl
+uv run system-mapper architecture-brief .system-map/edges/billing-export.jsonl --json > .system-map/architecture-brief.json
+uv run system-mapper graph /path/to/repo \\
+  src/billing.py docs/billing.md config/schedule.yml \\
+  --component billing/export \\
   --format mermaid > .system-map/edges/billing-export.mmd
 uv run system-mapper graph /path/to/repo \
   src/billing.py docs/billing.md config/schedule.yml \
@@ -169,10 +172,12 @@ uv run system-mapper prompt update --component billing/export
 1. Inventory code + documents + operational artefacts.
 2. Select bounded slices: file, folder, module, subsystem.
 3. Summarise each slice with evidence, unknowns, confidence, and graph edges.
-4. Let a low-context AI merge only lower-level summaries into higher-level maps.
-5. When code/docs change, analyse the diff against previous summaries.
-6. Reinspect changed slices and propagate stale/changed claims upward.
-7. Keep unresolved conflicts instead of smoothing them over.
+4. Cluster edges into subsystem communities.
+5. Generate an architecture brief for human review (file-to-file relationships, entry point, layers, external deps).
+6. Let a low-context AI merge only lower-level summaries into higher-level maps.
+7. When code/docs change, analyse the diff against previous summaries.
+8. Reinspect changed slices and propagate stale/changed claims upward.
+9. Keep unresolved conflicts instead of smoothing them over.
 ```
 
 ## Summary contract

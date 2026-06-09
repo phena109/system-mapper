@@ -5,6 +5,7 @@ import json
 import sys
 from pathlib import Path
 
+from .architecture_brief import build_architecture_brief
 from .clusters import cluster_edge_file
 from .graph_formats import render_dot, render_mermaid
 from .inventory import build_inventory
@@ -74,6 +75,18 @@ def cmd_graph(args: argparse.Namespace) -> None:
 
 def cmd_cluster(args: argparse.Namespace) -> None:
     emit(cluster_edge_file(args.edge_jsonl), args.json)
+
+
+def cmd_architecture_brief(args: argparse.Namespace) -> None:
+    brief = build_architecture_brief(
+        args.edge_jsonl,
+        top_file_edges=args.top_file_edges,
+        min_edge_weight=args.min_edge_weight,
+    )
+    if args.json:
+        print(json.dumps(brief, indent=2, sort_keys=True))
+    else:
+        print(brief["text_brief"])
 
 
 def cmd_prompt(args: argparse.Namespace) -> None:
@@ -156,6 +169,26 @@ def build_parser() -> argparse.ArgumentParser:
     cluster.add_argument("edge_jsonl", help="Path to JSONL emitted by `system-mapper graph`.")
     cluster.add_argument("--json", action="store_true")
     cluster.set_defaults(func=cmd_cluster)
+
+    brief = sub.add_parser(
+        "architecture-brief",
+        help="Produce a human-readable architecture brief from graph JSONL edges (file-to-file relationships, entry point, layers, external deps).",
+    )
+    brief.add_argument("edge_jsonl", help="Path to JSONL emitted by `system-mapper graph`.")
+    brief.add_argument("--json", action="store_true")
+    brief.add_argument(
+        "--top-file-edges",
+        type=int,
+        default=20,
+        help="Maximum number of file-to-file edges to show. Default: 20.",
+    )
+    brief.add_argument(
+        "--min-edge-weight",
+        type=int,
+        default=1,
+        help="Minimum edge weight to include. Default: 1.",
+    )
+    brief.set_defaults(func=cmd_architecture_brief)
 
     packet = sub.add_parser("packet", help="Emit a bounded low-context AI work packet as JSON.")
     packet.add_argument("root")

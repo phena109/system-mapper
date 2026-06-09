@@ -33,6 +33,307 @@ JS_ROUTE_CHAIN_RE = re.compile(
     re.I,
 )
 C_LIKE_EXTS = {".php", ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".java", ".cs", ".go"}
+
+# Noise symbols that should never become architecture nodes.
+# These are language builtins, test-framework helpers, and assertion/mocking
+# methods that produce massive amounts of useless edges.
+NOISE_SYMBOLS: dict[str, set[str] | str] = {
+    ".py": {
+        "print", "len", "range", "enumerate", "zip", "map", "filter",
+        "isinstance", "issubclass", "type", "str", "int", "float", "bool",
+        "list", "dict", "set", "tuple", "bytes", "bytearray",
+        "hasattr", "getattr", "setattr", "delattr",
+        "property", "staticmethod", "classmethod",
+        "super", "object", "repr", "hash", "id",
+        "open", "close", "read", "write",
+        "sorted", "reversed", "min", "max", "sum", "abs", "round",
+        "any", "all", "next", "iter",
+        "ValueError", "TypeError", "KeyError", "IndexError",
+        "RuntimeError", "NotImplementedError", "AttributeError",
+        "Exception", "BaseException",
+        "pytest", "unittest",
+        "mock", "Mock", "MagicMock", "patch", "sentinel",
+        "assert_called", "assert_called_once", "assert_called_with",
+        "assert_not_called", "assert_any_call",
+        "return_value", "side_effect", "call_count",
+        "assertTrue", "assertFalse", "assertEqual", "assertIn",
+        "assertIsNone", "assertIsNotNone", "assertRaises",
+        "assertIsInstance", "assertGreater", "assertLess",
+        "fail", "skip", "fixture", "parametrize", "mark",
+        "setup", "teardown", "setUp", "tearDown",
+        "append", "extend", "insert", "remove", "pop", "clear",
+        "copy", "deepcopy", "update", "get", "keys", "values", "items",
+        "join", "split", "strip", "replace", "format", "lower", "upper",
+        "startswith", "endswith", "find", "count",
+        "encode", "decode", "json", "loads", "dumps",
+    },
+    ".js": {
+        "console", "log", "warn", "error", "info", "debug",
+        "Object", "Array", "String", "Number", "Boolean",
+        "Map", "Set", "WeakMap", "WeakSet",
+        "Promise", "Symbol", "BigInt",
+        "parseInt", "parseFloat", "isNaN", "isFinite",
+        "setTimeout", "setInterval", "clearTimeout", "clearInterval",
+        "require", "module", "exports", "global", "process",
+        "Buffer", "URL", "URLSearchParams",
+        "JSON", "stringify", "parse",
+        "hasOwnProperty", "toString", "valueOf",
+        "push", "pop", "shift", "unshift", "splice",
+        "slice", "concat", "join", "sort", "reverse",
+        "forEach", "map", "filter", "reduce", "find", "findIndex",
+        "every", "some", "includes", "indexOf", "lastIndexOf",
+        "keys", "values", "entries", "assign", "freeze", "defineProperty",
+        "then", "catch", "finally", "resolve", "reject",
+        "expect", "toBe", "toEqual", "toBeTruthy", "toBeFalsy",
+        "toHaveBeenCalled", "toHaveBeenCalledWith", "toHaveBeenCalledTimes",
+        "describe", "it", "test", "beforeEach", "afterEach",
+        "beforeAll", "afterAll", "jest", "vi", "sinon",
+        "mock", "spy", "stub", "fn",
+        "render", "screen", "fireEvent", "waitFor",
+        "queryBy", "getBy", "findBy",
+        "useState", "useEffect", "useContext", "useRef",
+        "useMemo", "useCallback", "useReducer",
+    },
+    ".ts": ".js",  # alias: use .js noise set
+    ".tsx": ".js",
+    ".jsx": ".js",
+    ".php": {
+        "echo", "print", "var_dump", "print_r",
+        "isset", "unset", "empty", "die", "exit",
+        "count", "sizeof", "array", "array_merge", "array_keys",
+        "array_values", "array_map", "array_filter", "array_reduce",
+        "array_push", "array_pop", "array_shift", "array_unshift",
+        "array_slice", "array_splice", "array_search", "in_array",
+        "array_key_exists", "key_exists", "implode", "explode",
+        "strlen", "strpos", "str_replace", "strtolower", "strtoupper",
+        "substr", "trim", "ltrim", "rtrim", "strstr", "stristr",
+        "preg_match", "preg_replace", "preg_split",
+        "sprintf", "printf", "vsprintf",
+        "is_array", "is_string", "is_int", "is_integer", "is_float",
+        "is_bool", "is_null", "is_object", "is_numeric",
+        "intval", "floatval", "strval", "boolval",
+        "date", "time", "strtotime", "gmdate",
+        "json_encode", "json_decode",
+        "base64_encode", "base64_decode",
+        "urlencode", "urldecode", "rawurlencode", "rawurldecode",
+        "htmlspecialchars", "htmlentities", "strip_tags",
+        "file_get_contents", "file_put_contents", "fopen", "fclose",
+        "fwrite", "fread", "fgets", "feof", "fflush",
+        "curl_init", "curl_exec", "curl_setopt", "curl_close",
+        "curl_error", "curl_errno", "curl_getinfo",
+        "session_start", "session_destroy", "session_id",
+        "header", "headers_sent", "http_response_code",
+        "define", "defined", "constant",
+        "class_exists", "interface_exists", "trait_exists",
+        "method_exists", "property_exists",
+        "get_class", "get_parent_class", "get_called_class",
+        "get_object_vars", "get_class_methods",
+        "ReflectionClass", "ReflectionMethod", "ReflectionProperty",
+        "Exception", "Error", "RuntimeException", "InvalidArgumentException",
+        "LogicException", "BadMethodCallException", "OutOfBoundsException",
+        "expectException", "expectExceptionMessage",
+        "assertTrue", "assertFalse", "assertEqual", "assertSame",
+        "assertCount", "assertEmpty", "assertNotEmpty",
+        "assertInstanceOf", "assertNull", "assertNotNull",
+        "assertStringContainsString", "assertStringNotContainsString",
+        "assertArrayHasKey", "assertArrayNotHasKey",
+        "assertGreaterThan", "assertLessThan", "assertGreaterThanOrEqual",
+        "assertLessThanOrEqual", "assertFileExists", "assertDirectoryExists",
+        "mock", "shouldReceive", "expects", "will", "returnValue",
+        "returnValueMap", "throwException", "shouldHaveReceived",
+        "shouldNotHaveReceived", "spy",
+        "createMock", "createStub", "createConfiguredMock",
+        "getMockBuilder", "disableOriginalConstructor",
+        "setMethods", "onlyMethods", "addMethods",
+        "setUp", "tearDown", "setUpBeforeClass", "tearDownAfterClass",
+        "assertMatchesRegularExpression", "assertDoesNotMatchRegularExpression",
+        "assertStringEqualsFile", "assertXmlStringEqualsXmlString",
+        "foreach", "as", "endforeach", "endif", "endforeach", "endwhile",
+        "endforeach", "endif", "use", "namespace", "trait", "insteadof",
+    },
+    ".go": {
+        "append", "cap", "close", "complex", "copy", "delete",
+        "imag", "len", "make", "new", "panic", "print", "println",
+        "real", "recover",
+        "Errorf", "Fprintf", "Fprintln", "Printf", "Println",
+        "Sprintf", "Sprintln",
+        "Error", "Fatal", "Fatalf", "Fatalln",
+        "Log", "Logf", "Logln",
+        "t", "Errorf", "Fatalf", "Helper", "Cleanup",
+        "Run", "Skip", "Skipf", "Fail", "FailNow",
+        "assert", "require", "mock", "NewMock", "EXPECT",
+        "Return", "Times", "Maybe", "AnyTimes",
+    },
+    ".java": {
+        "System", "out", "println", "print", "printf",
+        "String", "Integer", "Long", "Double", "Float", "Boolean",
+        "Byte", "Short", "Character", "Object", "Class",
+        "Math", "Collections", "Arrays", "Objects",
+        "List", "Map", "Set", "Queue", "Deque",
+        "ArrayList", "HashMap", "HashSet", "LinkedList",
+        "TreeMap", "TreeSet", "LinkedHashMap", "LinkedHashSet",
+        "Iterator", "Iterable", "Comparable", "Comparator",
+        "Optional", "Stream", "Collectors",
+        "assertEquals", "assertTrue", "assertFalse", "assertNotNull",
+        "assertNull", "assertSame", "assertNotSame",
+        "assertThrows", "assertDoesNotThrow", "assertTimeout",
+        "fail", "assumeTrue", "assumeFalse",
+        "when", "thenReturn", "thenThrow", "verify",
+        "mock", "Mockito", "spy", "Spy",
+        "given", "willReturn", "willThrow",
+        "setUp", "tearDown", "Before", "After", "BeforeEach", "AfterEach",
+        "BeforeAll", "AfterAll", "Test", "ParameterizedTest",
+        "extendWith", "SpringBootTest", "Autowired",
+        "toString", "hashCode", "equals", "compareTo",
+        "getClass", "notify", "notifyAll", "wait", "clone",
+        "valueOf", "parseInt", "parseLong", "parseDouble",
+        "trim", "length", "charAt", "substring", "contains",
+        "startsWith", "endsWith", "indexOf", "lastIndexOf",
+        "replace", "replaceAll", "split", "toLowerCase", "toUpperCase",
+        "format", "getBytes", "toCharArray",
+        "add", "get", "set", "remove", "size", "isEmpty",
+        "containsKey", "containsValue", "put", "putAll",
+        "keySet", "values", "entrySet",
+        "stream", "filter", "map", "flatMap", "collect",
+        "forEach", "reduce", "findFirst", "findAny",
+        "count", "min", "max", "sorted", "distinct",
+        "limit", "skip", "peek", "anyMatch", "allMatch", "noneMatch",
+    },
+    ".cs": {
+        "Console", "Write", "WriteLine", "Read", "ReadLine",
+        "String", "Int32", "Int64", "Double", "Float", "Boolean",
+        "Object", "Type", "Enum", "Array", "List", "Dictionary",
+        "HashSet", "Queue", "Stack", "LinkedList",
+        "IEnumerable", "ICollection", "IList", "IDictionary",
+        "IQueryable", "IEnumerator", "IComparable",
+        "LINQ", "Select", "Where", "OrderBy", "GroupBy",
+        "First", "FirstOrDefault", "Single", "SingleOrDefault",
+        "Any", "All", "Count", "Sum", "Average", "Min", "Max",
+        "ToList", "ToArray", "ToDictionary", "ToHashSet",
+        "Add", "Remove", "Clear", "Contains", "IndexOf",
+        "Assert", "AreEqual", "AreNotEqual", "IsTrue", "IsFalse",
+        "IsNull", "IsNotNull", "IsInstanceOfType",
+        "Throws", "ThrowsAsync", "DoesNotThrow",
+        "Mock", "Setup", "Returns", "Throws", "Verify",
+        "It", "Times", "Once", "Never", "AtLeast", "AtMost",
+        "SetUp", "TearDown", "Test", "TestCase",
+        "ToString", "GetHashCode", "Equals",
+        "GetType", "GetLength", "GetValue", "SetValue",
+        "Substring", "Replace", "Trim", "Split",
+        "ToLower", "ToUpper", "StartsWith", "EndsWith",
+        "ContainsKey", "TryGetValue", "AddRange",
+    },
+    ".rb": {
+        "puts", "print", "p", "pp", "printf",
+        "puts", "gets", "chomp", "strip",
+        "Array", "Hash", "String", "Symbol", "Integer", "Float",
+        "NilClass", "TrueClass", "FalseClass", "Class", "Module",
+        "Object", "BasicObject", "Kernel",
+        "require", "require_relative", "load", "include", "extend",
+        "attr_reader", "attr_writer", "attr_accessor",
+        "new", "initialize", "allocate",
+        "puts", "raise", "fail", "catch", "throw",
+        "lambda", "proc", "block_given?", "yield",
+        "map", "collect", "select", "reject", "find", "detect",
+        "each", "each_with_object", "reduce", "inject",
+        "any?", "all?", "none?", "one?", "empty?", "nil?",
+        "sort", "sort_by", "reverse", "flatten", "compact",
+        "first", "last", "length", "size", "count",
+        "push", "pop", "shift", "unshift", "append",
+        "keys", "values", "key?", "has_key?", "value?", "has_value?",
+        "merge", "delete", "fetch", "dig",
+        "split", "join", "gsub", "sub", "match", "scan",
+        "to_s", "to_i", "to_f", "to_a", "to_h", "to_sym",
+        "freeze", "frozen?", "dup", "clone",
+        "is_a?", "kind_of?", "instance_of?",
+        "respond_to", "send", "method", "define_method",
+        "RSpec", "describe", "context", "it", "specify",
+        "expect", "to", "not_to", "to_not",
+        "eq", "eql", "equal", "be", "be_a", "be_an",
+        "be_nil", "be_empty", "be_true", "be_false",
+        "include", "match", "raise_error", "change",
+        "allow", "receive", "and_return", "and_raise",
+        "double", "instance_double", "class_double",
+        "before", "after", "around", "let", "subject",
+        "assert", "refute", "assert_equal", "refute_equal",
+        "assert_nil", "refute_nil", "assert_empty",
+        "assert_includes", "refute_includes",
+        "assert_raises", "assert_difference", "assert_no_difference",
+        "setup", "teardown", "test",
+    },
+    ".rs": {
+        "println", "print", "eprintln", "eprint",
+        "format", "panic", "assert", "assert_eq", "assert_ne",
+        "vec", "Some", "None", "Ok", "Err",
+        "Box", "Rc", "Arc", "Cell", "RefCell",
+        "Vec", "HashMap", "HashSet", "BTreeMap", "BTreeSet",
+        "String", "str", "i32", "i64", "u32", "u64",
+        "f32", "f64", "bool", "char", "usize", "isize",
+        "Option", "Result", "Iterator", "IntoIterator",
+        "From", "Into", "AsRef", "AsMut", "Deref", "Drop",
+        "Clone", "Copy", "Debug", "Display", "Default",
+        "PartialEq", "Eq", "PartialOrd", "Ord", "Hash",
+        "Send", "Sync", "Sized", "Fn", "FnMut", "FnOnce",
+        "new", "from", "into", "as_ref", "as_mut",
+        "unwrap", "unwrap_or", "unwrap_or_else", "expect",
+        "map", "and_then", "or_else", "filter", "fold",
+        "collect", "iter", "iter_mut", "into_iter",
+        "push", "pop", "len", "is_empty", "contains",
+        "insert", "remove", "get", "entry", "or_insert",
+        "to_string", "to_owned", "clone", "copy",
+        "write", "read", "open", "create", "append",
+        "spawn", "join", "send", "recv", "channel",
+        "lock", "unwrap", "expect",
+        "cfg", "test", "should_panic", "bench",
+        "mock", "mockall", "predicate", "expect",
+    },
+}
+
+# URL patterns that are dependency/installation noise, not architectural
+# external dependencies. These produce massive useless clusters.
+NOISE_URL_PATTERNS = [
+    re.compile(r"https?://registry\.npmjs\.org", re.I),
+    re.compile(r"https?://github\.com/[^/]+/[^/]+/sponsors", re.I),
+    re.compile(r"https?://opencollective\.com", re.I),
+    re.compile(r"https?://www\.paypal\.com/donate", re.I),
+    re.compile(r"https?://liberapay\.com", re.I),
+    re.compile(r"https?://ko-fi\.com", re.I),
+    re.compile(r"https?://patreon\.com", re.I),
+    re.compile(r"https?://(?:www\.)?npmjs\.com/package", re.I),
+    re.compile(r"https?://(?:raw\.)?githubusercontent\.com", re.I),
+    re.compile(r"https?://(?:www\.)?shields\.io", re.I),
+    re.compile(r"https?://(?:www\.)?badge\.fury\.io", re.I),
+    re.compile(r"https?://coveralls\.io", re.I),
+    re.compile(r"https?://travis-ci\.(?:org|com)", re.I),
+    re.compile(r"https?://ci\.appveyor\.com", re.I),
+    re.compile(r"https?://david-dm\.org", re.I),
+    re.compile(r"https?://(?:www\.)?bundlephobia\.com", re.I),
+    re.compile(r"https?://nodei\.co", re.I),
+    re.compile(r"https?://img\.shields\.io", re.I),
+]
+
+
+def _is_noise_url(url: str) -> bool:
+    return any(pattern.search(url) for pattern in NOISE_URL_PATTERNS)
+
+
+def _is_noise_symbol(name: str, suffix: str) -> bool:
+    # Resolve aliases (e.g. .ts -> .js)
+    seen: set[str] = set()
+    current = suffix
+    while current not in seen:
+        seen.add(current)
+        entry = NOISE_SYMBOLS.get(current)
+        if entry is None:
+            return False
+        if isinstance(entry, str):
+            current = entry
+            continue
+        return name in entry
+    return False
+
+
+CRON_RE = re.compile(r"(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)")
 PHP_SYMBOL_RE = re.compile(
     r"^\s*(?:abstract\s+|final\s+)?(?:class|interface|trait)\s+([A-Za-z_][\w]*)"
     r"|^\s*(?:(?:public|protected|private|static|abstract|final)\s+)*function\s+([A-Za-z_][\w]*)\s*\(",
@@ -54,8 +355,7 @@ C_LIKE_CALL_RE = re.compile(r"(?:\bnew\s+|::\s*|->\s*|\.\s*)?([A-Za-z_][\w]*)\s*
 PHP_INCLUDE_RE = re.compile(r"\b(?:require|require_once|include|include_once)\b\s*(?:\(?\s*)?(.+?);", re.I)
 STRING_RE = re.compile(r"[\"']([^\"']+)[\"']")
 PHP_ROUTE_RE = re.compile(r"\b(?:Route|router|app)\s*(?:::|->)\s*(get|post|put|patch|delete|options|head)\s*\(\s*[\"']([^\"']+)[\"']", re.I)
-C_INCLUDE_RE = re.compile(r"^\s*#\s*include\s+[\"<]([^\">]+)[\">]", re.M)
-CRON_RE = re.compile(r"(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)")
+C_INCLUDE_RE = re.compile(r"^\s*#\s*include\s+[<\"]([^\">]+)[\">]", re.M)
 MANUAL_RE = re.compile(r"\b(manual|human|admin|operator|retry|runbook|ask|approval)\b", re.I)
 BUSINESS_RE = re.compile(r"\b(rule|must|cannot|should|policy|approval|required|limit|threshold)\b", re.I)
 OWNER_RE = re.compile(r"\bowner\s*:\s*([^\n#]+)", re.I)
@@ -225,6 +525,8 @@ def _python_call_edges(path: Path, root: Path, text: str) -> list[Edge]:
         elif isinstance(node.func, ast.Attribute):
             name = node.func.attr
         if name in defined and name not in seen:
+            if _is_noise_symbol(name, ".py"):
+                continue
             targets.append(Edge("call", rel, f"{rel}:{name}", "medium", getattr(node, "lineno", None)))
             seen.add(name)
     return targets
@@ -386,6 +688,8 @@ def _javascript_call_edges(path: Path, root: Path, text: str) -> list[Edge]:
             method_definition = JS_METHOD_DEF_RE.match(stripped)
             if method_definition and method_definition.group(1) == name:
                 continue
+            if _is_noise_symbol(name, path.suffix.lower()):
+                continue
             targets.append(Edge("call", rel, f"{rel}:{name}", "medium", line_number))
             seen.add(name)
     return targets
@@ -474,6 +778,8 @@ def _go_call_edges(rel: str, text: str) -> list[Edge]:
         for name in C_LIKE_CALL_RE.findall(line):
             if name not in defined or name in seen:
                 continue
+            if _is_noise_symbol(name, ".go"):
+                continue
             targets.append(Edge("call", rel, f"{rel}:{name}", "medium", line_number))
             seen.add(name)
     return targets
@@ -555,6 +861,8 @@ def _c_like_call_edges(path: Path, root: Path, text: str) -> list[Edge]:
                 continue
             key = (name, line_number)
             if key in seen:
+                continue
+            if _is_noise_symbol(name, path.suffix.lower()):
                 continue
             targets.append(Edge("call", rel, f"{rel}:{name}", "medium", line_number))
             seen.add(key)
@@ -716,6 +1024,8 @@ def summarize_component(root: Path, paths: list[str], component: str, exclude_pa
             add_edge(Edge("trigger", rel, "cron schedule", "medium", cron_line), trigger_ref)
             add_claim("trigger", f"{rel} declares a cron trigger", "medium", [trigger_ref])
         for url, line_number in _urls_with_lines(text):
+            if _is_noise_url(url):
+                continue
             url_ref = add_evidence_record(rel, line_number, "external", _line_excerpt(text, line_number), freshness)
             add_edge(Edge("external", rel, url, "high" if kind == "code" else "medium", line_number), url_ref)
             add_claim("external_dependency", f"{name} references external system {url}", "high" if kind == "code" else "medium", [url_ref])
