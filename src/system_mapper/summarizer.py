@@ -579,6 +579,8 @@ def _php_route_edges(path: Path, root: Path, text: str) -> list[Edge]:
 
 
 def summarize_component(root: Path, paths: list[str], component: str, exclude_patterns: list[str] | None = None, exclude_list: list[str] | None = None) -> ComponentSummary:
+    root = Path(root) if not isinstance(root, Path) else root
+    name = component
     # --- Filtering Logic Start ---
     if exclude_patterns or exclude_list:
         print("Applying exclusion filters...") # Debugging aid for implementation tracking
@@ -658,6 +660,20 @@ def summarize_component(root: Path, paths: list[str], component: str, exclude_pa
             freshness,
         )
         add_edge(edge, edge_ref)
+
+    # --- Resolve paths and compute relative scope ---
+    resolved: list[Path] = []
+    rel_scope: list[str] = []
+    for p in paths:
+        path = p if isinstance(p, Path) else Path(p)
+        if not path.is_absolute():
+            path = root / path
+        resolved.append(path)
+        try:
+            rel_scope.append(str(path.relative_to(root)))
+        except ValueError:
+            rel_scope.append(str(path))
+    # --- End resolve ---
 
     for path, rel in zip(resolved, rel_scope):
         text = _safe_read(path)
