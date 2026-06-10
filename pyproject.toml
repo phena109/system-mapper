@@ -1,7 +1,7 @@
 [project]
 name = "system-mapper"
 version = "0.1.0"
-description = "Evidence-backed living system maps for large codebases and documentation sets."
+description = "Divide-and-conquer reasoning system for helping weak or low-context LLMs understand large software systems."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

@@ -95,7 +95,57 @@ def _evidence_record_from_dict(record: dict[str, Any]) -> EvidenceRecord:
     )
 
 
-def merge_component_summaries(summaries: list[dict[str, Any]], component: str | None = None) -> ComponentSummary:
+def _classify_claims(claim_records: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """Classify incoming claims during merge.
+
+    Returns categories: confirmed, repeated, new, weakened, contradicted, stale, unsupported.
+    """
+    classification: dict[str, list[str]] = {
+        "confirmed": [],
+        "repeated": [],
+        "new": [],
+        "weakened": [],
+        "contradicted": [],
+        "stale": [],
+        "unsupported": [],
+    }
+    seen_statements: dict[str, str] = {}
+    for claim in claim_records:
+        claim_id = str(claim.get("id", ""))
+        claim_type = str(claim.get("type", ""))
+        text = str(claim.get("text", "")).strip().lower()
+        confidence = str(claim.get("confidence", "medium"))
+        state = str(claim.get("state", "active"))
+
+        if state == "stale":
+            classification["stale"].append(claim_id)
+            continue
+        if state == "rejected":
+            classification["unsupported"].append(claim_id)
+            continue
+
+        # Check for repeated claims
+        statement_key = f"{claim_type}:{text}"
+        if statement_key in seen_statements:
+            classification["repeated"].append(claim_id)
+            continue
+        seen_statements[statement_key] = claim_id
+
+        # Check for weakened claims (low confidence in a merge)
+        if confidence == "low":
+            classification["weakened"].append(claim_id)
+            continue
+
+        classification["confirmed"].append(claim_id)
+
+    return classification
+
+
+def merge_component_summaries(
+    summaries: list[dict[str, Any]],
+    component: str | None = None,
+    claim_store_path: str | None = None,
+) -> ComponentSummary:
     """Merge lower-level component summaries into an upward map.
 
     The merge is intentionally conservative: it preserves source claims and
@@ -128,6 +178,31 @@ def merge_component_summaries(summaries: list[dict[str, Any]], component: str | 
     ]
     conflicts.extend(_detect_conflicts(claim_records))
 
+    # Classify incoming claims
+    claim_classification = _classify_claims(claim_records)
+
+    # If a claim store is provided, enrich with stored claims
+    if claim_store_path:
+        try:
+            from .claims import ClaimStore
+            store = ClaimStore(claim_store_path)
+            stored_claims = store.list_claims(component=name)
+            stored_conflicts = store.get_conflicts()
+            if stored_conflicts:
+                for sc in stored_conflicts:
+                    conflicts.append(
+                        f"Stored conflict on '{sc.get('topic', '')}': "
+                        f"{sc.get('claim_a', '')} vs {sc.get('claim_b', '')}"
+                    )
+            # Add stored claims that aren't already in the merge
+            existing_ids = {str(c.get("id", "")) for c in claim_records}
+            for sc in stored_claims:
+                if sc.claim_id not in existing_ids:
+                    claim_records.append(sc.to_dict())
+                    claim_classification["repeated"].append(sc.claim_id)
+        except (FileNotFoundError, KeyError):
+            pass
+
     unknowns = sorted({unknown for summary in summaries for unknown in summary.get("unknowns", []) if isinstance(unknown, str)})
     risks = sorted({risk for summary in summaries for risk in summary.get("risks", []) if isinstance(risk, str)})
     suggested_next = sorted(
@@ -137,11 +212,18 @@ def merge_component_summaries(summaries: list[dict[str, Any]], component: str | 
         unknowns.append("Merged summaries contain conflicting claims that need review")
         suggested_next.append("Resolve preserved conflicts before treating the upward map as authoritative")
 
+    # Add claim classification info to unknowns
+    if claim_classification.get("weakened"):
+        unknowns.append(f"Weakened claims: {', '.join(claim_classification['weakened'][:3])}")
+    if claim_classification.get("contradicted"):
+        conflicts.extend(claim_classification["contradicted"])
+
     confidence = {
         "purpose": "medium" if summaries else "low",
         "interfaces": "medium" if edge_records else "low",
         "business_rules": "medium" if any(claim.get("type") == "business_rule" for claim in claim_records) else "low",
         "operational_process": "medium" if any(claim.get("type") == "human_step" for claim in claim_records) else "low",
+        "claim_merge": "medium" if claim_records else "low",
     }
 
     return ComponentSummary(

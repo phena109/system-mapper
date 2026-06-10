@@ -1103,3 +1103,571 @@ def test_cli_merge_combines_summary_files_as_json(tmp_path: Path):
     assert merged["scope"] == ["app/code", "app/docs"]
     assert merged["claims"]
     assert merged["evidence_ledger"]
+
+
+# ===========================================================================
+# Tests for new modules: claims, worker, eval
+# ===========================================================================
+
+
+# --- claims module ---
+
+def test_claim_store_import_and_query(tmp_path: Path):
+    from system_mapper.claims import ClaimRecord, ClaimStore
+
+    store_path = tmp_path / "claims.json"
+    store = ClaimStore(store_path)
+
+    claims = [
+        ClaimRecord(
+            claim_id="claim.checkout.payment.entrypoint.001",
+            component="checkout/payment",
+            claim_type="entry_point",
+            statement="Payment processing enters through CheckoutController::submitPayment.",
+            evidence_ids=["ev.checkout_controller.001"],
+            confidence="medium",
+            status="accepted",
+            created_at="2026-06-10",
+            last_verified_at="2026-06-10",
+        ),
+        ClaimRecord(
+            claim_id="claim.checkout.payment.external.001",
+            component="checkout/payment",
+            claim_type="external_system",
+            statement="Payment gateway calls Stripe API.",
+            evidence_ids=["ev.payment_gateway.001"],
+            confidence="high",
+            status="accepted",
+            created_at="2026-06-10",
+            last_verified_at="2026-06-10",
+        ),
+    ]
+
+    counts = store.import_claims(claims)
+    assert counts["new"] == 2
+
+    # Query by component
+    results = store.list_claims(component="checkout/payment")
+    assert len(results) == 2
+
+    # Query by type
+    results = store.list_claims(claim_type="entry_point")
+    assert len(results) == 1
+
+    # Query by status
+    results = store.list_claims(status="accepted")
+    assert len(results) == 2
+
+    # Stats
+    stats = store.stats
+    assert stats["total"] == 2
+    assert stats["accepted"] == 2
+
+
+def test_claim_store_duplicate_handling(tmp_path: Path):
+    from system_mapper.claims import ClaimRecord, ClaimStore
+
+    store_path = tmp_path / "claims.json"
+    store = ClaimStore(store_path)
+
+    claim = ClaimRecord(
+        claim_id="claim.test.001",
+        component="test",
+        claim_type="purpose",
+        statement="Test claim.",
+        evidence_ids=["ev.001"],
+        confidence="medium",
+        status="accepted",
+    )
+
+    counts = store.import_claims([claim])
+    assert counts["new"] == 1
+
+    # Import same claim again
+    counts = store.import_claims([claim])
+    assert counts["duplicate"] == 1
+
+
+def test_claim_store_conflict_detection(tmp_path: Path):
+    from system_mapper.claims import ClaimRecord, ClaimStore
+
+    store_path = tmp_path / "claims.json"
+    store = ClaimStore(store_path)
+
+    claims = [
+        ClaimRecord(
+            claim_id="claim.order.owner.001",
+            component="order",
+            claim_type="owner",
+            statement="owner: checkout flow",
+            evidence_ids=["ev.001"],
+            confidence="medium",
+            status="accepted",
+        ),
+        ClaimRecord(
+            claim_id="claim.order.owner.002",
+            component="order",
+            claim_type="owner",
+            statement="owner: fulfilment sync",
+            evidence_ids=["ev.002"],
+            confidence="medium",
+            status="accepted",
+        ),
+    ]
+
+    store.import_claims(claims)
+    conflicts = store.get_conflicts()
+    assert len(conflicts) == 1
+    assert "checkout flow" in conflicts[0]["claim_a"]
+    assert "fulfilment sync" in conflicts[0]["claim_b"]
+
+
+def test_validate_worker_output_accepts_valid_claims(tmp_path: Path):
+    from system_mapper.claims import validate_worker_output
+
+    packet = {
+        "component": "checkout/payment",
+        "scope": ["src/CheckoutController.php"],
+        "evidence_ledger": [
+            {"id": "ev.checkout_controller.001", "source": "src/CheckoutController.php", "line_start": 10, "line_end": 15, "kind": "code", "excerpt": "function submitPayment()", "freshness": "current"},
+        ],
+    }
+
+    worker_output = {
+        "schema_version": "0.2",
+        "component": "checkout/payment",
+        "claims": [
+            {
+                "claim_type": "entry_point",
+                "statement": "Payment processing enters through submitPayment.",
+                "evidence_ids": ["ev.checkout_controller.001"],
+                "confidence": "medium",
+            }
+        ],
+        "hypotheses": [],
+        "unknowns": [],
+        "conflicts": [],
+        "next_actions": [],
+    }
+
+    result = validate_worker_output(worker_output, packet)
+    assert len(result.accepted_claims) == 1
+    assert len(result.rejected_claims) == 0
+    assert result.accepted_claims[0]["status"] == "accepted"
+
+
+def test_validate_worker_output_rejects_claims_without_evidence(tmp_path: Path):
+    from system_mapper.claims import validate_worker_output
+
+    packet = {
+        "component": "checkout/payment",
+        "scope": ["src/CheckoutController.php"],
+        "evidence_ledger": [],
+    }
+
+    worker_output = {
+        "schema_version": "0.2",
+        "component": "checkout/payment",
+        "claims": [
+            {
+                "claim_type": "entry_point",
+                "statement": "Payment processing enters through some function.",
+                "evidence_ids": [],
+                "confidence": "high",
+            }
+        ],
+        "hypotheses": [],
+        "unknowns": [],
+        "conflicts": [],
+        "next_actions": [],
+    }
+
+    result = validate_worker_output(worker_output, packet)
+    assert len(result.accepted_claims) == 0
+    assert len(result.rejected_claims) == 1
+    assert "No evidence IDs cited" in result.rejected_claims[0]["rejection_reason"]
+
+
+def test_validate_worker_output_rejects_missing_evidence_ids(tmp_path: Path):
+    from system_mapper.claims import validate_worker_output
+
+    packet = {
+        "component": "checkout/payment",
+        "scope": ["src/CheckoutController.php"],
+        "evidence_ledger": [
+            {"id": "ev.real.001", "source": "src/CheckoutController.php", "line_start": 1, "line_end": 5, "kind": "code", "excerpt": "real evidence", "freshness": "current"},
+        ],
+    }
+
+    worker_output = {
+        "schema_version": "0.2",
+        "component": "checkout/payment",
+        "claims": [
+            {
+                "claim_type": "entry_point",
+                "statement": "Payment processing enters through some function.",
+                "evidence_ids": ["ev.fake.999"],
+                "confidence": "high",
+            }
+        ],
+        "hypotheses": [],
+        "unknowns": [],
+        "conflicts": [],
+        "next_actions": [],
+    }
+
+    result = validate_worker_output(worker_output, packet)
+    assert len(result.rejected_claims) == 1
+    assert "not found in packet" in result.rejected_claims[0]["rejection_reason"]
+
+
+def test_validate_worker_output_downgrades_vague_language(tmp_path: Path):
+    from system_mapper.claims import validate_worker_output
+
+    packet = {
+        "component": "checkout/payment",
+        "scope": ["src/CheckoutController.php"],
+        "evidence_ledger": [
+            {"id": "ev.checkout_controller.001", "source": "src/CheckoutController.php", "line_start": 10, "line_end": 15, "kind": "code", "excerpt": "function submitPayment()", "freshness": "current"},
+        ],
+    }
+
+    worker_output = {
+        "schema_version": "0.2",
+        "component": "checkout/payment",
+        "claims": [
+            {
+                "claim_type": "entry_point",
+                "statement": "This clearly proves that all requests always go through submitPayment.",
+                "evidence_ids": ["ev.checkout_controller.001"],
+                "confidence": "high",
+            }
+        ],
+        "hypotheses": [],
+        "unknowns": [],
+        "conflicts": [],
+        "next_actions": [],
+    }
+
+    result = validate_worker_output(worker_output, packet)
+    # Should be downgraded (high -> medium or rejected)
+    assert len(result.downgraded_claims) > 0 or len(result.accepted_claims) > 0
+    if result.accepted_claims:
+        assert result.accepted_claims[0]["confidence"] != "high"
+
+
+def test_validate_worker_output_preserves_unknowns(tmp_path: Path):
+    from system_mapper.claims import validate_worker_output
+
+    packet = {
+        "component": "checkout/payment",
+        "scope": ["src/CheckoutController.php"],
+        "evidence_ledger": [],
+    }
+
+    worker_output = {
+        "schema_version": "0.2",
+        "component": "checkout/payment",
+        "claims": [],
+        "hypotheses": [],
+        "unknowns": [
+            {"question": "What happens on payment failure?", "why_it_matters": "Error handling is critical for payment flows.", "suggested_next_paths": ["src/PaymentErrorHandler.php"]},
+        ],
+        "conflicts": [],
+        "next_actions": [],
+    }
+
+    result = validate_worker_output(worker_output, packet)
+    assert any("Unknown preserved" in w for w in result.warnings)
+
+
+# --- worker module ---
+
+def test_worker_contract_includes_rules():
+    from system_mapper.worker import get_worker_contract
+
+    contract = get_worker_contract()
+    assert "low-context system-mapping worker" in contract
+    assert "Every claim must cite evidence IDs" in contract
+    assert "Do not infer beyond the inspected scope" in contract
+    assert "Output valid JSON only" in contract
+    assert "schema_version" in contract
+
+
+def test_parse_worker_output_normalizes_structure():
+    from system_mapper.worker import parse_worker_output
+
+    raw = {
+        "component": "checkout/payment",
+        "claims": [
+            {"type": "entry_point", "statement": "test", "evidence_refs": ["ev.001"], "confidence": "high"},
+        ],
+        "hypotheses": [{"statement": "maybe", "reason": "weak evidence"}],
+        "unknowns": [{"question": "what?"}],
+    }
+
+    result = parse_worker_output(raw)
+    assert result["component"] == "checkout/payment"
+    assert len(result["claims"]) == 1
+    assert result["claims"][0]["claim_type"] == "entry_point"
+    assert result["claims"][0]["evidence_ids"] == ["ev.001"]
+    assert len(result["hypotheses"]) == 1
+    assert len(result["unknowns"]) == 1
+
+
+def test_parse_worker_output_from_json_string():
+    from system_mapper.worker import parse_worker_output
+
+    raw = '{"component": "test", "claims": [{"claim_type": "purpose", "statement": "test", "evidence_ids": [], "confidence": "low"}]}'
+    result = parse_worker_output(raw)
+    assert result["component"] == "test"
+    assert len(result["claims"]) == 1
+
+
+def test_claims_from_worker_output():
+    from system_mapper.claims import ValidationResult
+    from system_mapper.worker import claims_from_worker_output
+
+    vr = ValidationResult(
+        accepted_claims=[
+            {"claim_type": "entry_point", "statement": "test claim", "evidence_ids": ["ev.001"], "confidence": "medium"},
+        ],
+        downgraded_claims=[
+            {"claim_type": "purpose", "statement": "vague claim", "evidence_ids": ["ev.002"], "confidence": "low"},
+        ],
+    )
+
+    claims = claims_from_worker_output(
+        worker_output={},
+        validation_result=vr,
+        component="test/component",
+    )
+
+    assert len(claims) == 2
+    assert claims[0].status == "accepted"
+    assert claims[1].status == "needs_review"
+    assert claims[0].component == "test/component"
+
+
+# --- eval module ---
+
+def test_eval_load_benchmark(tmp_path: Path):
+    from system_mapper.eval import load_benchmark
+
+    benchmark_path = tmp_path / "benchmark.json"
+    benchmark_path.write_text(
+        '[{"question": "Where does checkout start?", "expected_evidence": ["CheckoutController.php"], "expected_claim_type": "entry_point"}]',
+        encoding="utf-8",
+    )
+
+    questions = load_benchmark(benchmark_path)
+    assert len(questions) == 1
+    assert questions[0].question == "Where does checkout start?"
+    assert questions[0].expected_claim_type == "entry_point"
+
+
+def test_eval_create_sample_benchmark(tmp_path: Path):
+    from system_mapper.eval import create_sample_benchmark
+
+    output_path = tmp_path / "benchmarks" / "sample.json"
+    create_sample_benchmark(output_path)
+    assert output_path.exists()
+
+    import json
+    data = json.loads(output_path.read_text(encoding="utf-8"))
+    assert len(data) >= 3
+    assert any(q["expected_claim_type"] == "entry_point" for q in data)
+
+
+def test_eval_map_usefulness():
+    from system_mapper.eval import evaluate_map_usefulness, load_benchmark
+    from pathlib import Path
+    import json
+
+    # Create a minimal benchmark
+    benchmark_data = [
+        {"question": "Where does checkout payment start?", "expected_evidence": ["CheckoutController.php"], "expected_claim_type": "entry_point"},
+        {"question": "What external systems are involved?", "expected_claim_type": "external_system"},
+    ]
+
+    questions = []
+    from system_mapper.eval import BenchmarkQuestion
+    for item in benchmark_data:
+        questions.append(BenchmarkQuestion(
+            question=item["question"],
+            expected_evidence=item.get("expected_evidence", []),
+            expected_claim_type=item.get("expected_claim_type", ""),
+        ))
+
+    # Test with a system map that contains the expected evidence
+    system_map = {
+        "component": "checkout/payment",
+        "evidence_ledger": [
+            {"id": "ev.checkout_controller.001", "source": "src/CheckoutController.php", "line_start": 10},
+        ],
+        "claims": [
+            {"claim_type": "entry_point", "statement": "Entry through CheckoutController", "evidence_ids": ["ev.checkout_controller.001"]},
+        ],
+    }
+
+    report = evaluate_map_usefulness(questions, system_map)
+    assert report.total_questions == 2
+    assert report.mapped_correct >= 1  # At least the entry_point question should match
+
+
+# --- CLI integration tests ---
+
+def test_cli_worker_run_generates_prompt(tmp_path: Path):
+    """Test that worker run without llm-command generates a prompt."""
+    # First create a packet
+    write(
+        tmp_path / "src" / "billing.py",
+        "def export_invoice():\n    pass\n",
+    )
+
+    import subprocess, sys, json
+    result = subprocess.run(
+        [sys.executable, "-m", "system_mapper.cli", "packet", str(tmp_path), "src/billing.py", "--component", "billing"],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    packet = json.loads(result.stdout)
+
+    packet_path = tmp_path / "test-packet.json"
+    packet_path.write_text(json.dumps(packet), encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "system_mapper.cli", "worker", "run", str(packet_path)],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    output = json.loads(result.stdout)
+    assert "_prompt" in output
+    assert "low-context system-mapping worker" in output["_prompt"]
+
+
+def test_cli_validate_command(tmp_path: Path):
+    """Test the validate CLI command."""
+    import subprocess, sys, json
+
+    packet = {
+        "component": "test/component",
+        "scope": ["src/test.py"],
+        "evidence_ledger": [
+            {"id": "ev.test.001", "source": "src/test.py", "line_start": 1, "line_end": 5, "kind": "code", "excerpt": "def test():", "freshness": "current"},
+        ],
+    }
+    worker_output = {
+        "schema_version": "0.2",
+        "component": "test/component",
+        "claims": [
+            {"claim_type": "purpose", "statement": "This is a test component.", "evidence_ids": ["ev.test.001"], "confidence": "medium"},
+        ],
+        "hypotheses": [],
+        "unknowns": [],
+        "conflicts": [],
+        "next_actions": [],
+    }
+
+    packet_path = tmp_path / "test-packet.json"
+    worker_path = tmp_path / "test-worker.json"
+    packet_path.write_text(json.dumps(packet), encoding="utf-8")
+    worker_path.write_text(json.dumps(worker_output), encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "system_mapper.cli", "validate", str(worker_path), str(packet_path)],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    output = json.loads(result.stdout)
+    assert "accepted_claims" in output
+    assert len(output["accepted_claims"]) == 1
+
+
+def test_cli_claim_import_and_list(tmp_path: Path):
+    """Test the claim import and list CLI commands."""
+    import subprocess, sys, json
+
+    validated = {
+        "accepted_claims": [
+            {"claim_type": "entry_point", "statement": "Test entry point.", "evidence_ids": ["ev.001"], "confidence": "medium"},
+        ],
+        "downgraded_claims": [],
+        "rejected_claims": [],
+        "validation_errors": [],
+        "warnings": [],
+    }
+
+    validated_path = tmp_path / "validated.json"
+    validated_path.write_text(json.dumps(validated), encoding="utf-8")
+
+    claim_store_path = tmp_path / "claims.json"
+
+    # Import
+    result = subprocess.run(
+        [sys.executable, "-m", "system_mapper.cli", "claim", "import", str(validated_path), "--claim-store", str(claim_store_path), "--component", "test"],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    import_result = json.loads(result.stdout)
+    assert import_result["status"] == "imported"
+    assert import_result["counts"]["new"] == 1
+
+    # List
+    result = subprocess.run(
+        [sys.executable, "-m", "system_mapper.cli", "claim", "list", "--claim-store", str(claim_store_path)],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    list_result = json.loads(result.stdout)
+    assert list_result["total"] == 1
+
+
+def test_cli_eval_create_benchmark(tmp_path: Path):
+    """Test the eval-create-benchmark CLI command."""
+    import subprocess, sys, json
+
+    output_path = tmp_path / "benchmark.json"
+
+    result = subprocess.run(
+        [sys.executable, "-m", "system_mapper.cli", "eval-create-benchmark", "--output", str(output_path)],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    output = json.loads(result.stdout)
+    assert output["status"] == "created"
+    assert Path(output["path"]).exists()
+
+
+def test_cli_prompt_worker_kind(tmp_path: Path):
+    """Test that prompt worker emits the worker contract."""
+    import subprocess, sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "system_mapper.cli", "prompt", "worker"],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    assert "low-context system-mapping worker" in result.stdout
+    assert "Every claim must cite evidence IDs" in result.stdout
