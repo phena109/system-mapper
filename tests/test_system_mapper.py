@@ -181,6 +181,38 @@ def test_cli_inventory_and_slice_emit_json(tmp_path: Path):
     assert payload["scope"] == ["src/app.py"]
 
 
+def test_cli_slice_exclude_filters_noisy_paths_before_mapping(tmp_path: Path):
+    write(tmp_path / "src" / "app.py", "def main():\n    return 'ok'\n")
+    write(tmp_path / "docs" / "manual.md", "# Manual\nOperator retry required.\n")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "system_mapper.cli",
+            "slice",
+            str(tmp_path),
+            "src/app.py",
+            "docs/manual.md",
+            "--component",
+            "app",
+            "--exclude",
+            "docs/**",
+            "--json",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["scope"] == ["src/app.py"]
+    assert all(record["source"] == "src/app.py" for record in payload["evidence_ledger"])
+    assert "Documentation freshness not verified" not in payload["unknowns"]
+
+
 def test_cli_prompt_outputs_low_context_ai_contract():
     result = subprocess.run(
         [sys.executable, "-m", "system_mapper.cli", "prompt", "slice", "--component", "billing/export"],

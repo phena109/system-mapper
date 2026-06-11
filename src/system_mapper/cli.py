@@ -43,7 +43,16 @@ def cmd_inventory(args: argparse.Namespace) -> None:
 
 
 def cmd_slice(args: argparse.Namespace) -> None:
-    emit(summarize_component(args.root, args.paths, args.component), args.json)
+    emit(
+        summarize_component(
+            args.root,
+            args.paths,
+            args.component,
+            exclude_patterns=args.exclude or None,
+            exclude_list=args.exclude_list,
+        ),
+        args.json,
+    )
 
 
 def cmd_update(args: argparse.Namespace) -> None:
@@ -363,7 +372,7 @@ def build_parser() -> argparse.ArgumentParser:
     sl = sub.add_parser("slice", help="Summarise a bounded component from selected files.")
     sl.add_argument("root")
     sl.add_argument("paths", nargs="+")
-    sl.add_argument("--exclude", help="Glob pattern(s) for files/folders to exclude from processing.")
+    sl.add_argument("--exclude", action="append", help="Glob pattern(s) for files/folders to exclude from processing. May be repeated.")
     sl.add_argument("--exclude_list", nargs="+", help="Specific list of paths/patterns to exclude.")
     sl.add_argument("--component")
     sl.add_argument("--json", action="store_true")

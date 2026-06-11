@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import fnmatch
 import hashlib
 import re
 from pathlib import Path
@@ -1125,29 +1126,26 @@ def _php_route_edges(path: Path, root: Path, text: str) -> list[Edge]:
     return routes
 
 
+def _matches_path_pattern(path: str, pattern: str) -> bool:
+    return fnmatch.fnmatch(path, pattern) or fnmatch.fnmatch(Path(path).name, pattern)
+
+
 def summarize_component(root: Path, paths: list[str], component: str, exclude_patterns: list[str] | None = None, exclude_list: list[str] | None = None) -> ComponentSummary:
     root = Path(root) if not isinstance(root, Path) else root
     name = component
-    # --- Filtering Logic Start ---
     if exclude_patterns or exclude_list:
-        # Convert glob patterns to regex-safe strings if necessary, but for now, treat as literal match targets
-        # In a real implementation, glob patterns should be expanded to regexes matching path components.
-        # For this MVP, we check if the full relative path matches any pattern/list item.
         filtered_paths = []
         for p in paths:
-            path_str = str(p) # Assuming 'paths' contains Path objects or strings that resolve to them
+            path_str = str(p)
             is_excluded = False
-            if exclude_patterns and any(re.search(pattern, path_str) for pattern in exclude_patterns):
+            if exclude_patterns and any(_matches_path_pattern(path_str, pattern) for pattern in exclude_patterns):
                 is_excluded = True
-            if not is_excluded and exclude_list and any(path_str == item for item in exclude_list):
+            if not is_excluded and exclude_list and any(path_str == item or _matches_path_pattern(path_str, item) for item in exclude_list):
                 is_excluded = True
 
             if not is_excluded:
                 filtered_paths.append(p)
-        
-        # Replace the original paths with filtered ones for processing downstream
         paths = filtered_paths
-    # --- Filtering Logic End ---
 
     evidence: list[Evidence] = []
     evidence_ledger: list[EvidenceRecord] = []

@@ -59,6 +59,7 @@ The first research pass found these durable directions:
    - Go bounded slices now extract `type` and `func` declarations (including methods) as entry points, emit deterministic same-file call edges for declared functions/methods, and resolve same-module imports from `go.mod` to repository-local `.go` files so Go services contribute explicit map edges without adding a parser dependency yet.
    - Ruby bounded slices now extract `module`, `class`, and `def` entry points, resolve `require_relative` dependencies to repository-local `.rb` files, and emit deterministic same-file call edges for defined Ruby methods so Rails/Sinatra-era codebases are less opaque to low-context workers.
    - Rust bounded slices now extract `fn`, `struct`, `enum`, and `trait` entry points, resolve sibling `mod name;` declarations to repository-local `name.rs`/`name/mod.rs` files, and emit deterministic same-file call/constructor edges for Rust services and CLIs.
+   - Slice-level exclusion flags now pass through the CLI and use glob-style matching, letting workers omit noisy supplied files before evidence, edge, unknown, and claim generation.
 
 2. **Graph/community layer**
    - Store edges as JSONL.
