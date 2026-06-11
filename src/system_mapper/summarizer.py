@@ -365,6 +365,11 @@ RUBY_BARE_CALL_RE = re.compile(r"^\s*([A-Za-z_][\w!?=]*)\b")
 PHP_INCLUDE_RE = re.compile(r"\b(?:require|require_once|include|include_once)\b\s*(?:\(?\s*)?(.+?);", re.I)
 STRING_RE = re.compile(r"[\"']([^\"']+)[\"']")
 PHP_ROUTE_RE = re.compile(r"\b(?:Route|router|app)\s*(?:::|->)\s*(get|post|put|patch|delete|options|head)\s*\(\s*[\"']([^\"']+)[\"']", re.I)
+JAVA_MAPPING_ANNOTATION_RE = re.compile(
+    r"@(?P<kind>RequestMapping|GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping)\s*(?:\((?P<args>[^)]*)\))?",
+    re.I,
+)
+JAVA_REQUEST_METHOD_RE = re.compile(r"RequestMethod\s*\.\s*(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)", re.I)
 C_INCLUDE_RE = re.compile(r"^\s*#\s*include\s+[<\"]([^\">]+)[\">]", re.M)
 MANUAL_RE = re.compile(r"\b(manual|human|admin|operator|retry|runbook|ask|approval)\b", re.I)
 BUSINESS_RE = re.compile(r"\b(rule|must|cannot|should|policy|approval|required|limit|threshold)\b", re.I)
@@ -957,7 +962,7 @@ def _c_like_call_edges(path: Path, root: Path, text: str) -> list[Edge]:
     declaration_prefixes = ("function ", "public function ", "protected function ", "private function ", "class ")
     for line_number, line in enumerate(text.splitlines(), start=1):
         stripped = line.strip()
-        if stripped.startswith(declaration_prefixes) or stripped.startswith("#include"):
+        if stripped.startswith(declaration_prefixes) or stripped.startswith("#include") or stripped.startswith("@"):
             continue
         for name in C_LIKE_CALL_RE.findall(line):
             if name in skip_names:
@@ -970,6 +975,74 @@ def _c_like_call_edges(path: Path, root: Path, text: str) -> list[Edge]:
             targets.append(Edge("call", rel, f"{rel}:{name}", "medium", line_number))
             seen.add(key)
     return targets
+
+
+def _join_route_paths(prefix: str, route_path: str) -> str:
+    prefix = prefix.strip() or ""
+    route_path = route_path.strip() or ""
+    if not prefix:
+        return route_path or "/"
+    if not route_path:
+        return prefix if prefix.startswith("/") else f"/{prefix}"
+    return "/" + "/".join(part.strip("/") for part in (prefix, route_path) if part.strip("/"))
+
+
+def _java_mapping_path(args: str) -> str:
+    strings = STRING_RE.findall(args or "")
+    return strings[0] if strings else ""
+
+
+def _java_mapping_methods(kind: str, args: str) -> list[str]:
+    shortcut = {
+        "getmapping": "GET",
+        "postmapping": "POST",
+        "putmapping": "PUT",
+        "patchmapping": "PATCH",
+        "deletemapping": "DELETE",
+    }.get(kind.lower())
+    if shortcut:
+        return [shortcut]
+    methods = [method.upper() for method in JAVA_REQUEST_METHOD_RE.findall(args or "")]
+    return methods or []
+
+
+def _java_spring_route_edges(path: Path, root: Path, text: str) -> list[Edge]:
+    try:
+        rel = str(path.relative_to(root))
+    except ValueError:
+        rel = str(path)
+    class_prefix = ""
+    pending_annotations: list[tuple[list[str], str, int]] = []
+    routes: list[Edge] = []
+    seen: set[tuple[str, int]] = set()
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        annotation = JAVA_MAPPING_ANNOTATION_RE.search(line)
+        if annotation:
+            kind = annotation.group("kind")
+            args = annotation.group("args") or ""
+            methods = _java_mapping_methods(kind, args)
+            route_path = _java_mapping_path(args)
+            pending_annotations.append((methods, route_path, line_number))
+            continue
+        stripped = line.strip()
+        if not pending_annotations:
+            continue
+        if re.search(r"\b(?:class|interface|record)\s+[A-Za-z_]", stripped):
+            for methods, route_path, _annotation_line in pending_annotations:
+                if not methods:
+                    class_prefix = _join_route_paths(class_prefix, route_path)
+            pending_annotations.clear()
+            continue
+        if "(" in stripped and (stripped.endswith("{") or "{" in stripped):
+            for methods, route_path, annotation_line in pending_annotations:
+                for method in methods:
+                    target = f"{method} {_join_route_paths(class_prefix, route_path)}"
+                    key = (target, annotation_line)
+                    if key not in seen:
+                        routes.append(Edge("route", rel, target, "medium", annotation_line))
+                        seen.add(key)
+            pending_annotations.clear()
+    return routes
 
 
 def _php_route_edges(path: Path, root: Path, text: str) -> list[Edge]:
@@ -1162,6 +1235,9 @@ def summarize_component(root: Path, paths: list[str], component: str, exclude_pa
                 add_sourced_edge(edge, freshness)
             if path.suffix.lower() == ".php":
                 for edge in _php_route_edges(path, root, text):
+                    add_sourced_edge(edge, freshness)
+            if path.suffix.lower() == ".java":
+                for edge in _java_spring_route_edges(path, root, text):
                     add_sourced_edge(edge, freshness)
             for target, line_number in _c_like_internal_dependencies(root, path, text):
                 add_sourced_edge(Edge("internal", rel, target, "high", line_number), freshness)

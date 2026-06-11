@@ -732,6 +732,38 @@ fn main() {
     assert ("call", "src/main.rs:serve", 15) in edges
 
 
+def test_summary_emits_java_spring_route_edges_from_mapping_annotations(tmp_path: Path):
+    write(
+        tmp_path / "src" / "main" / "java" / "MapsController.java",
+        """
+package maps;
+
+@RestController
+@RequestMapping("/maps")
+class MapsController {
+    @GetMapping("/{mapId}")
+    public MapView readMap() { return loadMap(); }
+
+    @PostMapping
+    public MapView createMap() { return saveMap(); }
+
+    @RequestMapping(value = "/search", method = RequestMethod.PUT)
+    public MapView searchMaps() { return loadMap(); }
+}
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["src/main/java/MapsController.java"], component="maps/api")
+
+    route_edges = {(edge.target, edge.source_line, edge.confidence) for edge in summary.edges if edge.kind == "route"}
+    assert ("GET /maps/{mapId}", 6, "medium") in route_edges
+    assert ("POST /maps", 9, "medium") in route_edges
+    assert ("PUT /maps/search", 12, "medium") in route_edges
+    call_targets = {edge.target for edge in summary.edges if edge.kind == "call"}
+    assert "src/main/java/MapsController.java:GetMapping" not in call_targets
+    assert "src/main/java/MapsController.java:RequestMapping" not in call_targets
+
+
 def test_summary_emits_php_symbols_calls_routes_and_internal_edges(tmp_path: Path):
     write(tmp_path / "src" / "Auth" / "Token.php", "<?php\nfunction issueToken() { return 'token'; }\n")
     write(
