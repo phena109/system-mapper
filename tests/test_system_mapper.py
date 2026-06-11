@@ -764,6 +764,41 @@ class MapsController {
     assert "src/main/java/MapsController.java:RequestMapping" not in call_targets
 
 
+def test_summary_emits_csharp_aspnet_route_edges_from_controller_attributes(tmp_path: Path):
+    write(
+        tmp_path / "Controllers" / "MapsController.cs",
+        """
+using Microsoft.AspNetCore.Mvc;
+
+[ApiController]
+[Route("api/maps")]
+public class MapsController : ControllerBase
+{
+    [HttpGet("{mapId}")]
+    public IActionResult ReadMap(string mapId) { return Ok(); }
+
+    [HttpPost]
+    public IActionResult CreateMap() { return Created(); }
+
+    [HttpDelete("{mapId}")]
+    public IActionResult DeleteMap(string mapId) { return NoContent(); }
+}
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["Controllers/MapsController.cs"], component="maps/api")
+
+    route_edges = {(edge.target, edge.source_line, edge.confidence) for edge in summary.edges if edge.kind == "route"}
+    assert ("GET /api/maps/{mapId}", 7, "medium") in route_edges
+    assert ("POST /api/maps", 10, "medium") in route_edges
+    assert ("DELETE /api/maps/{mapId}", 13, "medium") in route_edges
+    call_targets = {edge.target for edge in summary.edges if edge.kind == "call"}
+    assert "Controllers/MapsController.cs:HttpGet" not in call_targets
+    assert "Controllers/MapsController.cs:HttpPost" not in call_targets
+    assert "Controllers/MapsController.cs:ReadMap" not in call_targets
+    assert "Controllers/MapsController.cs:Ok" not in call_targets
+
+
 def test_summary_emits_php_symbols_calls_routes_and_internal_edges(tmp_path: Path):
     write(tmp_path / "src" / "Auth" / "Token.php", "<?php\nfunction issueToken() { return 'token'; }\n")
     write(

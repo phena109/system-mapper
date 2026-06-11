@@ -215,6 +215,8 @@ NOISE_SYMBOLS: dict[str, set[str] | str] = {
         "IsNull", "IsNotNull", "IsInstanceOfType",
         "Throws", "ThrowsAsync", "DoesNotThrow",
         "Mock", "Setup", "Returns", "Throws", "Verify",
+        "Ok", "Created", "CreatedAtAction", "CreatedAtRoute",
+        "NoContent", "NotFound", "BadRequest", "Unauthorized", "Forbid",
         "It", "Times", "Once", "Never", "AtLeast", "AtMost",
         "SetUp", "TearDown", "Test", "TestCase",
         "ToString", "GetHashCode", "Equals",
@@ -370,6 +372,10 @@ JAVA_MAPPING_ANNOTATION_RE = re.compile(
     re.I,
 )
 JAVA_REQUEST_METHOD_RE = re.compile(r"RequestMethod\s*\.\s*(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)", re.I)
+CS_ROUTE_ATTRIBUTE_RE = re.compile(
+    r"\[(?P<kind>Route|HttpGet|HttpPost|HttpPut|HttpPatch|HttpDelete|HttpOptions|HttpHead)\s*(?:\((?P<args>[^)]*)\))?\]",
+    re.I,
+)
 C_INCLUDE_RE = re.compile(r"^\s*#\s*include\s+[<\"]([^\">]+)[\">]", re.M)
 MANUAL_RE = re.compile(r"\b(manual|human|admin|operator|retry|runbook|ask|approval)\b", re.I)
 BUSINESS_RE = re.compile(r"\b(rule|must|cannot|should|policy|approval|required|limit|threshold)\b", re.I)
@@ -962,7 +968,9 @@ def _c_like_call_edges(path: Path, root: Path, text: str) -> list[Edge]:
     declaration_prefixes = ("function ", "public function ", "protected function ", "private function ", "class ")
     for line_number, line in enumerate(text.splitlines(), start=1):
         stripped = line.strip()
-        if stripped.startswith(declaration_prefixes) or stripped.startswith("#include") or stripped.startswith("@"):
+        if stripped.startswith(declaration_prefixes) or stripped.startswith("#include") or stripped.startswith(("@", "[")):
+            continue
+        if path.suffix.lower() == ".cs" and re.search(r"\b[A-Za-z_][\w<>?\[\]]*\s+[A-Za-z_][\w]*\s*\([^)]*\)\s*(?:\{|=>)", stripped):
             continue
         for name in C_LIKE_CALL_RE.findall(line):
             if name in skip_names:
@@ -1042,6 +1050,61 @@ def _java_spring_route_edges(path: Path, root: Path, text: str) -> list[Edge]:
                         routes.append(Edge("route", rel, target, "medium", annotation_line))
                         seen.add(key)
             pending_annotations.clear()
+    return routes
+
+
+def _csharp_attribute_path(args: str) -> str:
+    return _java_mapping_path(args)
+
+
+def _csharp_attribute_method(kind: str) -> str | None:
+    methods = {
+        "httpget": "GET",
+        "httppost": "POST",
+        "httpput": "PUT",
+        "httppatch": "PATCH",
+        "httpdelete": "DELETE",
+        "httpoptions": "OPTIONS",
+        "httphead": "HEAD",
+    }
+    return methods.get(kind.lower())
+
+
+def _csharp_aspnet_route_edges(path: Path, root: Path, text: str) -> list[Edge]:
+    try:
+        rel = str(path.relative_to(root))
+    except ValueError:
+        rel = str(path)
+    class_prefix = ""
+    pending_attributes: list[tuple[str | None, str, int]] = []
+    routes: list[Edge] = []
+    seen: set[tuple[str, int]] = set()
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        attribute = CS_ROUTE_ATTRIBUTE_RE.search(line)
+        if attribute:
+            kind = attribute.group("kind")
+            args = attribute.group("args") or ""
+            pending_attributes.append((_csharp_attribute_method(kind), _csharp_attribute_path(args), line_number))
+            continue
+        stripped = line.strip()
+        if not pending_attributes:
+            continue
+        if re.search(r"\bclass\s+[A-Za-z_]", stripped):
+            for method, route_path, _attribute_line in pending_attributes:
+                if method is None:
+                    class_prefix = _join_route_paths(class_prefix, route_path)
+            pending_attributes.clear()
+            continue
+        if "(" in stripped and ("{" in stripped or stripped.endswith(";")):
+            for method, route_path, attribute_line in pending_attributes:
+                if method is None:
+                    continue
+                target = f"{method} {_join_route_paths(class_prefix, route_path)}"
+                key = (target, attribute_line)
+                if key not in seen:
+                    routes.append(Edge("route", rel, target, "medium", attribute_line))
+                    seen.add(key)
+            pending_attributes.clear()
     return routes
 
 
@@ -1238,6 +1301,9 @@ def summarize_component(root: Path, paths: list[str], component: str, exclude_pa
                     add_sourced_edge(edge, freshness)
             if path.suffix.lower() == ".java":
                 for edge in _java_spring_route_edges(path, root, text):
+                    add_sourced_edge(edge, freshness)
+            if path.suffix.lower() == ".cs":
+                for edge in _csharp_aspnet_route_edges(path, root, text):
                     add_sourced_edge(edge, freshness)
             for target, line_number in _c_like_internal_dependencies(root, path, text):
                 add_sourced_edge(Edge("internal", rel, target, "high", line_number), freshness)
