@@ -129,6 +129,32 @@ diff --git a/src/api.py b/src/api.py
     assert any("docs/api.md may be stale after code changes" in stale for stale in update.possibly_stale_sources)
 
 
+def test_update_from_diff_reports_added_javascript_route_interfaces():
+    previous = {
+        "component": "maps/api",
+        "edges": [{"kind": "route", "source": "src/routes/maps.ts", "target": "GET /maps/:mapId"}],
+        "last_updated_from": ["src/routes/maps.ts", "docs/api.md"],
+    }
+    diff = """
+diff --git a/src/routes/maps.ts b/src/routes/maps.ts
+@@
+ router.get('/maps/:mapId', loadMap)
++router.post('/maps', createMap)
++app.put("/maps/:mapId", updateMap)
++router.route('/maps/:mapId').delete(deleteMap)
+"""
+
+    update = update_summary_from_diff(previous, diff)
+
+    assert "src/routes/maps.ts" in update.changed_files
+    assert "New route interface added: POST /maps" in update.interface_changes
+    assert "New route interface added: PUT /maps/:mapId" in update.interface_changes
+    assert "New route interface added: DELETE /maps/:mapId" in update.interface_changes
+    assert "route edge may now target POST /maps" in update.edge_changes
+    assert not any("no obvious behaviour" in change for change in update.behaviour_changes)
+    assert any("docs/api.md may be stale after code changes" in stale for stale in update.possibly_stale_sources)
+
+
 def test_cli_inventory_and_slice_emit_json(tmp_path: Path):
     write(tmp_path / "src" / "app.py", "def main():\n    return 'ok'\n")
     result = subprocess.run(

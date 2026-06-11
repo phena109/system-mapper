@@ -82,6 +82,7 @@ The first research pass found these durable directions:
    - Re-run slice summaries for only affected areas.
    - Produce changelog entries and stale-source warnings.
    - Initial interface-change support: `update` now detects added Python FastAPI/Flask-style route decorators in diffs and reports route edge changes so low-context workers can reinspect API-facing maps.
+   - JavaScript/TypeScript Express-style route additions in diffs (`router.post(...)`, `app.put(...)`, `router.route(...).delete(...)`) now also produce interface and route-edge change warnings, keeping Node API maps fresher after incremental changes.
 
 ### Efficiency
 

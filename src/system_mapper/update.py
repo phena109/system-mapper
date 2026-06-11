@@ -17,6 +17,14 @@ ADDED_PY_ROUTE_METHODS_RE = re.compile(
     r"^\+\s*@[^\s.()]+\.route\(\s*[\"']([^\"']+)[\"'][^\n]*methods\s*=\s*\[([^\]]*)\]",
     re.M | re.I,
 )
+ADDED_JS_ROUTE_RE = re.compile(
+    r"^\+\s*(?:app|router)\s*\.\s*(get|post|put|patch|delete|options|head)\s*\(\s*[\"']([^\"']+)[\"']",
+    re.M | re.I,
+)
+ADDED_JS_ROUTE_CHAIN_RE = re.compile(
+    r"^\+\s*(?:app|router)\s*\.\s*route\s*\(\s*[\"']([^\"']+)[\"']\s*\)\s*\.\s*(get|post|put|patch|delete|options|head)\s*\(",
+    re.M | re.I,
+)
 ROUTE_METHOD_VALUE_RE = re.compile(r"[\"']([A-Za-z]+)[\"']")
 
 
@@ -34,6 +42,8 @@ def update_summary_from_diff(previous: dict[str, Any], diff: str) -> ChangeUpdat
     for path, method_values in ADDED_PY_ROUTE_METHODS_RE.findall(diff):
         methods = [method.upper() for method in ROUTE_METHOD_VALUE_RE.findall(method_values)] or ["GET"]
         added_routes.extend((method, path) for method in methods)
+    added_routes.extend((method.upper(), path) for method, path in ADDED_JS_ROUTE_RE.findall(diff))
+    added_routes.extend((method.upper(), path) for path, method in ADDED_JS_ROUTE_CHAIN_RE.findall(diff))
 
     behaviour_changes: list[str] = []
     interface_changes: list[str] = []
