@@ -16,6 +16,7 @@ class MapQualityReport:
     thresholds: dict[str, float] = field(default_factory=dict)
     failures: list[str] = field(default_factory=list)
     recommendations: list[str] = field(default_factory=list)
+    details: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -45,6 +46,15 @@ def evaluate_map_quality(system_map: dict[str, Any], *, min_score: float = 0.8) 
         if _high_confidence_supported(claim, evidence_ids)
     ]
     vague_claims = [claim for claim in claims if _has_vague_language(str(claim.get("statement", claim.get("text", ""))))]
+    claims_with_missing_evidence = [
+        claim for claim in claims
+        if any(eid not in evidence_ids for eid in _claim_evidence_ids(claim))
+    ]
+    uncited_claims = [claim for claim in claims if not _claim_evidence_ids(claim)]
+    unsupported_high_confidence = [
+        claim for claim in high_confidence_claims
+        if not _high_confidence_supported(claim, evidence_ids)
+    ]
     accepted_claims = [claim for claim in claims if str(claim.get("status", "accepted")) == "accepted"]
     unsupported_accepted = [
         claim for claim in accepted_claims
@@ -107,6 +117,14 @@ def evaluate_map_quality(system_map: dict[str, Any], *, min_score: float = 0.8) 
     if not unknowns:
         recommendations.append("Add explicit unknowns when runtime behaviour, ownership, or production configuration was not inspected.")
 
+    details = {
+        "uncited_claims": [_claim_summary(claim, evidence_ids) for claim in uncited_claims],
+        "claims_with_missing_evidence": [_claim_summary(claim, evidence_ids) for claim in claims_with_missing_evidence],
+        "unsupported_high_confidence_claims": [_claim_summary(claim, evidence_ids) for claim in unsupported_high_confidence],
+        "vague_claims": [_claim_summary(claim, evidence_ids) for claim in vague_claims],
+        "unsupported_accepted_claims": [_claim_summary(claim, evidence_ids) for claim in unsupported_accepted],
+    }
+
     passed = not failures
     return MapQualityReport(
         anti_garbage_score=anti_garbage_score,
@@ -115,6 +133,7 @@ def evaluate_map_quality(system_map: dict[str, Any], *, min_score: float = 0.8) 
         thresholds=thresholds,
         failures=failures,
         recommendations=recommendations,
+        details=details,
     )
 
 
@@ -201,6 +220,23 @@ def _collect_conflicts(system_map: dict[str, Any]) -> list[Any]:
 
     visit(system_map)
     return conflicts
+
+
+def _claim_summary(claim: dict[str, Any], evidence_ids: set[str]) -> dict[str, Any]:
+    """Return a compact, actionable pointer to a claim that lowered quality."""
+
+    cited = _claim_evidence_ids(claim)
+    statement = str(claim.get("statement", claim.get("text", "")))
+    identifier = claim.get("id") or claim.get("claim_id") or statement[:80]
+    return {
+        "id": str(identifier),
+        "type": str(claim.get("claim_type", claim.get("type", ""))),
+        "statement": statement,
+        "confidence": str(claim.get("confidence", "")),
+        "status": str(claim.get("status", "")),
+        "evidence_ids": cited,
+        "missing_evidence_ids": [eid for eid in cited if eid not in evidence_ids],
+    }
 
 
 def _claim_evidence_ids(claim: dict[str, Any]) -> list[str]:

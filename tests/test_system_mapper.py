@@ -1737,6 +1737,31 @@ def test_quality_report_flags_garbage_map_with_measurable_failures():
     assert any("citation_validity" in failure for failure in report.failures)
 
 
+def test_quality_report_identifies_specific_claims_to_fix():
+    from system_mapper.quality import evaluate_map_quality
+
+    system_map = {
+        "component": "checkout/payment",
+        "evidence_ledger": [
+            {"id": "ev.real.001", "source": "src/routes.py", "line_start": 4, "line_end": 6, "excerpt": "@router.post('/pay')", "freshness": "sha256:abc"},
+        ],
+        "claims": [
+            {"id": "claim.uncited", "claim_type": "purpose", "statement": "The system clearly handles every payment safely.", "evidence_ids": [], "confidence": "high", "status": "accepted"},
+            {"id": "claim.missing", "claim_type": "owner", "statement": "Billing owns all checkout behaviour.", "evidence_ids": ["ev.fake.999"], "confidence": "medium", "status": "accepted"},
+            {"id": "claim.too_weak", "claim_type": "dependency", "statement": "It calls Stripe.", "evidence_ids": ["ev.real.001"], "confidence": "high", "status": "accepted"},
+        ],
+        "unknowns": [],
+    }
+
+    report = evaluate_map_quality(system_map)
+
+    assert report.details["uncited_claims"][0]["id"] == "claim.uncited"
+    assert report.details["claims_with_missing_evidence"][0]["missing_evidence_ids"] == ["ev.fake.999"]
+    high_confidence_ids = {claim["id"] for claim in report.details["unsupported_high_confidence_claims"]}
+    assert {"claim.uncited", "claim.too_weak"} <= high_confidence_ids
+    assert report.details["vague_claims"][0]["id"] == "claim.uncited"
+
+
 # --- CLI integration tests ---
 
 def test_cli_quality_command_reports_measurable_score(tmp_path: Path):

@@ -211,7 +211,7 @@ uv run system-mapper quality \
   --fail-on-garbage
 ```
 
-A passing score does not prove the map is true. It only means the artifact is reviewable: claims cite evidence, citations resolve, high-confidence claims have stronger support, and uncertainty is visible.
+A passing score does not prove the map is true. It only means the artifact is reviewable: claims cite evidence, citations resolve, high-confidence claims have stronger support, and uncertainty is visible. When the gate fails, the JSON report includes `details` buckets such as `uncited_claims`, `claims_with_missing_evidence`, `unsupported_high_confidence_claims`, and `vague_claims` so a low-context reviewer can jump to the exact claims to fix instead of interpreting only aggregate scores.
 
 ## Scenario: update a previous summary after a code change
 
