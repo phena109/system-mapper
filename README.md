@@ -28,7 +28,7 @@ packet -> LLM worker -> evidence-backed claims -> validation -> claim store -> r
 ## Current Capabilities
 
 - `inventory`: classify files as code, document, config, or other
-- `slice`: produce a bounded component summary with evidence, claims, edges, unknowns
+- `slice`: produce a bounded component summary with evidence, claims, edges, unknowns (including Python/JS/TS/PHP/Go/Ruby code-entry and dependency/call extraction)
 - `update`: compare a previous JSON summary with a git diff and report changes
 - `merge`: recursively merge lower-level summaries while preserving claims and conflicts
 - `graph`: emit dependency/data-flow edges as JSONL, Mermaid, or DOT

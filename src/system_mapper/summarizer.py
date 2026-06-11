@@ -352,6 +352,9 @@ C_LIKE_SYMBOL_RE = re.compile(
     re.M,
 )
 C_LIKE_CALL_RE = re.compile(r"(?:\bnew\s+|::\s*|->\s*|\.\s*)?([A-Za-z_][\w]*)\s*\(")
+RUBY_SYMBOL_RE = re.compile(r"^\s*(?:class|module)\s+([A-Za-z_][\w]*(?:::[A-Za-z_][\w]*)*)|^\s*def\s+(?:self\.)?([A-Za-z_][\w!?=]*)", re.M)
+RUBY_REQUIRE_RELATIVE_RE = re.compile(r"^\s*require_relative\s+[\"']([^\"']+)[\"']", re.M)
+RUBY_BARE_CALL_RE = re.compile(r"^\s*([A-Za-z_][\w!?=]*)\b")
 PHP_INCLUDE_RE = re.compile(r"\b(?:require|require_once|include|include_once)\b\s*(?:\(?\s*)?(.+?);", re.I)
 STRING_RE = re.compile(r"[\"']([^\"']+)[\"']")
 PHP_ROUTE_RE = re.compile(r"\b(?:Route|router|app)\s*(?:::|->)\s*(get|post|put|patch|delete|options|head)\s*\(\s*[\"']([^\"']+)[\"']", re.I)
@@ -410,6 +413,15 @@ def _python_symbols(text: str) -> list[str]:
     ]
     nodes.sort(key=lambda node: (node.lineno, node.col_offset))
     return [node.name for node in nodes[:20]]
+
+
+def _ruby_symbols(text: str) -> list[str]:
+    found: list[str] = []
+    for match in RUBY_SYMBOL_RE.finditer(text):
+        symbol = next((g for g in match.groups() if g), None)
+        if symbol and symbol not in found:
+            found.append(symbol)
+    return found[:20]
 
 
 def _sentence_with(text: str, pattern: re.Pattern[str]) -> str:
@@ -785,6 +797,44 @@ def _go_call_edges(rel: str, text: str) -> list[Edge]:
     return targets
 
 
+def _ruby_internal_dependencies(root: Path, path: Path, text: str) -> list[tuple[str, int | None]]:
+    targets: list[tuple[str, int | None]] = []
+    seen: set[str] = set()
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        for specifier in RUBY_REQUIRE_RELATIVE_RE.findall(line):
+            target = _resolve_relative_candidate(root, path, specifier, (".rb",))
+            if target and target not in seen:
+                targets.append((target, line_number))
+                seen.add(target)
+    return targets
+
+
+def _ruby_call_edges(path: Path, root: Path, text: str) -> list[Edge]:
+    try:
+        rel = str(path.relative_to(root))
+    except ValueError:
+        rel = str(path)
+    defined = set(_ruby_symbols(text))
+    targets: list[Edge] = []
+    seen: set[str] = set()
+    declaration_prefixes = ("class ", "module ", "def ", "require ", "require_relative ", "end")
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith(declaration_prefixes):
+            continue
+        match = RUBY_BARE_CALL_RE.match(stripped)
+        if not match:
+            continue
+        name = match.group(1)
+        if name not in defined or name in seen:
+            continue
+        if _is_noise_symbol(name, ".rb"):
+            continue
+        targets.append(Edge("call", rel, f"{rel}:{name}", "medium", line_number))
+        seen.add(name)
+    return targets
+
+
 def _php_include_specifier(expression: str) -> str | None:
     strings = STRING_RE.findall(expression)
     if not strings:
@@ -989,6 +1039,8 @@ def summarize_component(root: Path, paths: list[str], component: str, exclude_pa
         file_ref = add_evidence_record(rel, 1, kind, _line_excerpt(text, 1) or rel, freshness)
         if kind == "code" and path.suffix == ".py":
             symbols = _python_symbols(text)
+        elif kind == "code" and path.suffix.lower() == ".rb":
+            symbols = _ruby_symbols(text)
         elif kind == "code" and path.suffix.lower() in C_LIKE_EXTS:
             symbols = _c_like_symbols(text, path.suffix.lower())
         else:
@@ -1046,6 +1098,11 @@ def summarize_component(root: Path, paths: list[str], component: str, exclude_pa
             for edge in _javascript_route_edges(path, root, text):
                 add_sourced_edge(edge, freshness)
             for target, line_number in _javascript_internal_dependencies(root, path, text):
+                add_sourced_edge(Edge("internal", rel, target, "high", line_number), freshness)
+        if kind == "code" and path.suffix.lower() == ".rb":
+            for edge in _ruby_call_edges(path, root, text):
+                add_sourced_edge(edge, freshness)
+            for target, line_number in _ruby_internal_dependencies(root, path, text):
                 add_sourced_edge(Edge("internal", rel, target, "high", line_number), freshness)
         if kind == "code" and path.suffix.lower() in C_LIKE_EXTS:
             for edge in _c_like_call_edges(path, root, text):

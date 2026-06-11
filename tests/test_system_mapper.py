@@ -1997,6 +1997,43 @@ def export_invoice(invoice_id):
 # ===========================================================================
 
 
+def test_summary_extracts_ruby_entry_points_dependencies_and_calls(tmp_path: Path):
+    write(tmp_path / "app" / "services" / "map_builder.rb", "class MapBuilder\nend\n")
+    write(
+        tmp_path / "app" / "controllers" / "maps_controller.rb",
+        """
+require_relative '../services/map_builder'
+
+module Admin
+  class MapsController
+    def create
+      validate_payload
+      MapBuilder.new
+    end
+
+    def validate_payload
+      true
+    end
+  end
+end
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["app/controllers/maps_controller.rb"], component="ruby/maps")
+
+    assert "app/controllers/maps_controller.rb:Admin" in summary.entry_points
+    assert "app/controllers/maps_controller.rb:MapsController" in summary.entry_points
+    assert "app/controllers/maps_controller.rb:create" in summary.entry_points
+    assert "app/controllers/maps_controller.rb:validate_payload" in summary.entry_points
+    internal_edges = {edge.target: edge for edge in summary.edges if edge.kind == "internal"}
+    assert "app/services/map_builder.rb" in internal_edges
+    assert internal_edges["app/services/map_builder.rb"].source_line == 1
+    call_edges = {edge.target: edge for edge in summary.edges if edge.kind == "call"}
+    assert "app/controllers/maps_controller.rb:validate_payload" in call_edges
+    assert call_edges["app/controllers/maps_controller.rb:validate_payload"].source_line == 6
+    assert "app/controllers/maps_controller.rb:new" not in call_edges
+
+
 def test_full_pipeline_plan_next_worker_validate_claim_quality(tmp_path: Path):
     """End-to-end test: plan → next → worker run → validate → claim import → quality."""
     import json, subprocess, sys
