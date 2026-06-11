@@ -144,3 +144,152 @@ def cluster_edge_records(records: list[dict[str, Any]]) -> dict[str, Any]:
 
 def cluster_edge_file(path: Path | str) -> dict[str, Any]:
     return cluster_edge_records(load_edge_records(path))
+
+
+# ---------------------------------------------------------------------------
+# Subsystem-level summaries from clusters
+# ---------------------------------------------------------------------------
+
+def _classify_node_role(node: str, edge_kinds: list[str] | None = None) -> str:
+    """Heuristic classification of a node's architectural role."""
+    if node.startswith(("http://", "https://")):
+        return "external_system"
+    if " " in node and node.split(" ")[0] in {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD", "ROUTE"}:
+        return "route"
+    if node.startswith("cron "):
+        return "trigger"
+    if ":" in node and ("/" in node or "." in node):
+        return "file_symbol"
+    if "/" in node or "." in node:
+        return "file"
+    # Simple names (no /, ., :) could be data stores or symbols.
+    # If we have edge context and see data_store edges, prefer data_store.
+    if edge_kinds and "data_store" in edge_kinds:
+        return "data_store"
+    # Default: simple names are likely data stores in graph context
+    return "data_store"
+
+
+def _guess_subsystem_name(nodes: list[str], components: list[str]) -> str:
+    """Guess a probable subsystem name from cluster components and nodes."""
+    # Prefer component names — they carry domain meaning
+    if components:
+        # Use the most common prefix among components
+        parts_list = [c.split("/") for c in components if c]
+        if parts_list:
+            first_parts = [p[0] for p in parts_list if p]
+            if first_parts:
+                from collections import Counter
+                most_common = Counter(first_parts).most_common(1)[0][0]
+                # If multiple components share a prefix, use it
+                count = sum(1 for p in first_parts if p == most_common)
+                if count > 1:
+                    return most_common
+                return components[0].split("/")[0]
+    # Fallback: use the most common file directory
+    dirs: list[str] = []
+    for node in nodes:
+        if "/" in node:
+            dirs.append(node.split("/")[0])
+    if dirs:
+        from collections import Counter
+        return Counter(dirs).most_common(1)[0][0]
+    return "unknown"
+
+
+def build_subsystem_summaries(cluster_report: dict[str, Any]) -> list[dict[str, Any]]:
+    """Enrich cluster output with subsystem-level summaries.
+
+    Each subsystem summary includes:
+    - probable_subsystem: guessed name for this cluster
+    - why_grouped: human-readable reason these nodes belong together
+    - main_entrypoints: detected entry points (file:symbol nodes)
+    - data_stores: data store targets
+    - external_systems: external URL targets
+    - routes: HTTP route targets
+    - triggers: cron/trigger targets
+    - unknowns: structural unknowns (isolated nodes, no clear entry)
+    - claims_to_review: items that need human verification
+    """
+    summaries: list[dict[str, Any]] = []
+
+    for cluster in cluster_report.get("clusters", []):
+        nodes = cluster.get("nodes", [])
+        components = cluster.get("components", [])
+        edge_kinds = cluster.get("edge_kinds", [])
+
+        # Classify nodes by role
+        entrypoints: list[str] = []
+        data_stores: list[str] = []
+        external_systems: list[str] = []
+        routes: list[str] = []
+        triggers: list[str] = []
+        file_symbols: list[str] = []
+
+        for node in nodes:
+            role = _classify_node_role(node, edge_kinds)
+            if role == "file_symbol":
+                file_symbols.append(node)
+            elif role == "external_system":
+                external_systems.append(node)
+            elif role == "route":
+                routes.append(node)
+            elif role == "trigger":
+                triggers.append(node)
+            elif role == "data_store":
+                data_stores.append(node)
+
+        # Main entrypoints: file:symbol nodes that are likely entry points
+        # Prefer nodes with "main", "init", "run", "start", "handler", "controller"
+        ep_keywords = {"main", "init", "run", "start", "handler", "controller", "app", "server", "index"}
+        main_eps = [n for n in file_symbols if any(kw in n.lower() for kw in ep_keywords)]
+        if not main_eps and file_symbols:
+            main_eps = file_symbols[:3]  # Top 3 as fallback
+
+        # Build why_grouped reason
+        reasons: list[str] = []
+        if components:
+            reasons.append(f"components: {', '.join(components)}")
+        if edge_kinds:
+            reasons.append(f"edge kinds: {', '.join(edge_kinds)}")
+        if cluster.get("hub_nodes"):
+            reasons.append(f"hub nodes: {', '.join(cluster['hub_nodes'])}")
+        why_grouped = "; ".join(reasons) if reasons else "connected by graph edges"
+
+        # Structural unknowns
+        unknowns: list[str] = []
+        if not main_eps:
+            unknowns.append("No clear entry point detected in this subsystem.")
+        if not components:
+            unknowns.append("No component labels available; subsystem boundary is inferred from edges only.")
+        if len(nodes) <= 2:
+            unknowns.append("Very small cluster; may be a partial view or leaf component.")
+
+        # Claims to review
+        claims_to_review: list[str] = []
+        if external_systems:
+            claims_to_review.append(f"External dependencies: {', '.join(external_systems[:3])}. Verify these are intentional.")
+        if data_stores:
+            claims_to_review.append(f"Data stores: {', '.join(data_stores[:3])}. Confirm ownership and access patterns.")
+        if routes:
+            claims_to_review.append(f"Routes: {', '.join(routes[:5])}. Verify API contract and auth requirements.")
+        if triggers:
+            claims_to_review.append(f"Triggers: {', '.join(triggers[:3])}. Check schedule and failure handling.")
+
+        summaries.append({
+            "cluster_id": cluster.get("id", "unknown"),
+            "probable_subsystem": _guess_subsystem_name(nodes, components),
+            "why_grouped": why_grouped,
+            "node_count": len(nodes),
+            "edge_count": cluster.get("edge_count", 0),
+            "main_entrypoints": main_eps,
+            "data_stores": data_stores,
+            "external_systems": external_systems,
+            "routes": routes,
+            "triggers": triggers,
+            "components": components,
+            "unknowns": unknowns,
+            "claims_to_review": claims_to_review,
+        })
+
+    return summaries

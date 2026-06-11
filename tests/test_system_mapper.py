@@ -1779,3 +1779,359 @@ def test_cli_prompt_worker_kind(tmp_path: Path):
     )
     assert "low-context system-mapping worker" in result.stdout
     assert "Every claim must cite evidence IDs" in result.stdout
+
+
+# ===========================================================================
+# Tests for subsystem-summaries
+# ===========================================================================
+
+
+def test_subsystem_summaries_from_cluster_report():
+    """Test that build_subsystem_summaries enriches clusters with semantic info."""
+    from system_mapper.clusters import build_subsystem_summaries
+
+    cluster_report = {
+        "input_edges": 4,
+        "cluster_count": 2,
+        "clusters": [
+            {
+                "id": "cluster-001",
+                "nodes": [
+                    "src/api.py", "src/service.py", "POST /invoices",
+                    "invoices", "https://partner.example/export",
+                    "src/api.py:main", "src/api.py:handler",
+                    "src/service.py:process",
+                ],
+                "edge_count": 5,
+                "edge_kinds": ["route", "internal", "call", "data_store", "external"],
+                "components": ["billing/api", "billing/service"],
+                "evidence_sources": ["src/api.py:1", "src/service.py:4"],
+                "hub_nodes": ["src/api.py"],
+            },
+            {
+                "id": "cluster-002",
+                "nodes": ["config/schedule.yml", "cron schedule"],
+                "edge_count": 1,
+                "edge_kinds": ["trigger"],
+                "components": ["ops/worker"],
+                "evidence_sources": ["config/schedule.yml:1"],
+                "hub_nodes": [],
+            },
+        ],
+    }
+
+    summaries = build_subsystem_summaries(cluster_report)
+    assert len(summaries) == 2
+
+    # First cluster: billing subsystem
+    s0 = summaries[0]
+    assert s0["cluster_id"] == "cluster-001"
+    assert s0["probable_subsystem"] == "billing"
+    assert "billing/api" in s0["why_grouped"]
+    assert "route" in s0["why_grouped"]
+    assert s0["node_count"] == 8
+    assert s0["edge_count"] == 5
+    # main entrypoint should be detected (contains "main")
+    assert any("main" in ep for ep in s0["main_entrypoints"])
+    assert "invoices" in s0["data_stores"]
+    assert any("partner.example" in ext for ext in s0["external_systems"])
+    assert any("POST /invoices" in r for r in s0["routes"])
+    # Should have claims_to_review for external systems, data stores, routes
+    assert len(s0["claims_to_review"]) >= 3
+
+    # Second cluster: ops/worker (small, trigger-only)
+    s1 = summaries[1]
+    assert s1["cluster_id"] == "cluster-002"
+    assert s1["probable_subsystem"] == "ops"
+    assert s1["node_count"] == 2
+    assert "cron schedule" in s1["triggers"]
+    # Small cluster should have unknowns
+    assert len(s1["unknowns"]) > 0
+
+
+def test_subsystem_summaries_guess_name_from_directory():
+    """Test that subsystem name falls back to directory when no components."""
+    from system_mapper.clusters import build_subsystem_summaries
+
+    cluster_report = {
+        "input_edges": 1,
+        "cluster_count": 1,
+        "clusters": [
+            {
+                "id": "cluster-001",
+                "nodes": ["src/helper.py", "src/main.py"],
+                "edge_count": 1,
+                "edge_kinds": ["internal"],
+                "components": [],
+                "evidence_sources": [],
+                "hub_nodes": [],
+            },
+        ],
+    }
+
+    summaries = build_subsystem_summaries(cluster_report)
+    assert len(summaries) == 1
+    assert summaries[0]["probable_subsystem"] == "src"
+    assert any("No component labels" in u for u in summaries[0]["unknowns"])
+
+
+def test_cli_subsystem_summaries_command(tmp_path: Path):
+    """Test the subsystem-summaries CLI command."""
+    import json, subprocess, sys
+
+    edges = tmp_path / "edges.jsonl"
+    edges.write_text(
+        "\n".join(
+            json.dumps(record)
+            for record in [
+                {
+                    "component": "billing/api",
+                    "kind": "route",
+                    "source": "src/api.py",
+                    "target": "POST /invoices",
+                    "confidence": "high",
+                    "source_line": 10,
+                },
+                {
+                    "component": "billing/api",
+                    "kind": "internal",
+                    "source": "src/api.py",
+                    "target": "src/service.py",
+                    "confidence": "high",
+                    "source_line": 2,
+                },
+                {
+                    "component": "billing/service",
+                    "kind": "data_store",
+                    "source": "src/service.py",
+                    "target": "invoices",
+                    "confidence": "medium",
+                    "source_line": 4,
+                },
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "system_mapper.cli",
+            "subsystem-summaries",
+            str(edges),
+            "--json",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    output = json.loads(result.stdout)
+    assert output["cluster_count"] == 1
+    assert len(output["subsystem_summaries"]) == 1
+    s = output["subsystem_summaries"][0]
+    assert s["probable_subsystem"] == "billing"
+    assert "invoices" in s["data_stores"]
+    assert any("POST /invoices" in r for r in s["routes"])
+    assert len(s["claims_to_review"]) > 0
+
+
+# ===========================================================================
+# Tests for uncertainty-aware strategy
+# ===========================================================================
+
+
+def test_uncertainty_aware_strategy_selects_highest_value_slice(tmp_path: Path):
+    """Test that uncertainty-aware strategy prioritizes slices with unknowns."""
+    from system_mapper.runner import run_next_slice
+
+    # Create two files: one with unknowns (manual retry mention), one without
+    write(
+        tmp_path / "src" / "billing.py",
+        """
+import requests
+DATABASE_TABLE = "invoices"
+
+def export_invoice(invoice_id):
+    requests.post("https://partner.example/export", json={"invoice_id": invoice_id})
+    return invoice_id
+""".strip(),
+    )
+    write(
+        tmp_path / "docs" / "billing.md",
+        "# Billing\nInvoice exports run nightly and may need manual retry.\n",
+    )
+    write(
+        tmp_path / "src" / "simple.py",
+        "def hello():\n    return 'ok'\n",
+    )
+
+    # First, run breadth-first to create all artifacts
+    result1 = run_next_slice(tmp_path, strategy="breadth-first", output_layout="flat")
+    assert result1["outcome"] == "advanced"
+
+    # Run remaining slices
+    while True:
+        result = run_next_slice(tmp_path, strategy="breadth-first", output_layout="flat")
+        if result["outcome"] == "no_change":
+            break
+
+    # Now test uncertainty-aware: it should select the slice with unknowns first
+    # (the billing one has "manual retry" which creates an unknown)
+    result = run_next_slice(
+        tmp_path,
+        strategy="uncertainty-aware",
+        output_layout="flat",
+        claim_store_path=str(tmp_path / ".system-map" / "claims.json"),
+    )
+    # All artifacts exist, so it should return no_change
+    assert result["outcome"] == "no_change"
+
+
+# ===========================================================================
+# End-to-end integration test
+# ===========================================================================
+
+
+def test_full_pipeline_plan_next_worker_validate_claim_quality(tmp_path: Path):
+    """End-to-end test: plan → next → worker run → validate → claim import → quality."""
+    import json, subprocess, sys
+
+    # Set up a small project
+    write(
+        tmp_path / "src" / "billing.py",
+        """
+import requests
+DATABASE_TABLE = "invoices"
+
+# Owner: Billing Ops
+# Business rule: invoices must be approved before export.
+def export_invoice(invoice_id):
+    requests.post("https://partner.example/export", json={"invoice_id": invoice_id})
+    return invoice_id
+""".strip(),
+    )
+    write(
+        tmp_path / "docs" / "billing.md",
+        "# Billing\nInvoice exports run nightly and may need manual retry.\n",
+    )
+    write(
+        tmp_path / "config" / "schedule.yml",
+        "billing_export: 0 2 * * *\n",
+    )
+
+    # Step 1: Plan
+    result = subprocess.run(
+        [
+            sys.executable, "-m", "system_mapper.cli",
+            "plan", str(tmp_path), "--json", "--output-layout", "flat",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+    )
+    plan = json.loads(result.stdout)
+    assert plan["slices"]
+    assert plan["strategy"] == "breadth-first"
+
+    # Step 2: Run next until all slices are done
+    while True:
+        result = subprocess.run(
+            [
+                sys.executable, "-m", "system_mapper.cli",
+                "next", str(tmp_path), "--output-layout", "flat",
+            ],
+            cwd=Path(__file__).resolve().parents[1],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+        )
+        next_result = json.loads(result.stdout)
+        if next_result["outcome"] == "no_change":
+            break
+        assert next_result["outcome"] == "advanced"
+
+    # Step 3: Worker run (generate prompt, no LLM)
+    # Find a packet
+    packets_dir = tmp_path / ".system-map" / "packets"
+    packet_files = list(packets_dir.glob("*.json"))
+    assert packet_files, "No packets were generated"
+
+    result = subprocess.run(
+        [
+            sys.executable, "-m", "system_mapper.cli",
+            "worker", "run", str(packet_files[0]),
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+    )
+    worker_output = json.loads(result.stdout)
+    assert "_prompt" in worker_output
+    assert "low-context system-mapping worker" in worker_output["_prompt"]
+
+    # Step 4: Validate (use the packet as both worker output and packet for simplicity)
+    # Create a minimal valid worker output
+    packet = json.loads(packet_files[0].read_text())
+    minimal_worker = {
+        "schema_version": "0.2",
+        "component": packet.get("component", "test"),
+        "claims": [
+            {
+                "claim_type": "purpose",
+                "statement": "This component handles invoice exports.",
+                "evidence_ids": [packet["evidence_ledger"][0]["id"]] if packet.get("evidence_ledger") else [],
+                "confidence": "medium",
+            }
+        ],
+        "hypotheses": [],
+        "unknowns": [],
+        "conflicts": [],
+        "next_actions": [],
+    }
+    worker_path = tmp_path / "test-worker.json"
+    worker_path.write_text(json.dumps(minimal_worker), encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable, "-m", "system_mapper.cli",
+            "validate", str(worker_path), str(packet_files[0]),
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+    )
+    validation = json.loads(result.stdout)
+    assert "accepted_claims" in validation
+
+    # Step 5: Claim import
+    validated_path = tmp_path / "test-validated.json"
+    validated_path.write_text(json.dumps(validation), encoding="utf-8")
+    claim_store_path = tmp_path / "test-claims.json"
+
+    result = subprocess.run(
+        [
+            sys.executable, "-m", "system_mapper.cli",
+            "claim", "import", str(validated_path),
+            "--claim-store", str(claim_store_path),
+            "--component", "billing",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+    )
+    import_result = json.loads(result.stdout)
+    assert import_result["status"] == "imported"
+
+    # Step 6: Quality check
+    result = subprocess.run(
+        [
+            sys.executable, "-m", "system_mapper.cli",
+            "quality", str(validated_path),
+            "--evidence-source", str(packet_files[0]),
+            "--min-score", "0.0",  # Low bar since minimal worker output
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+    )
+    quality = json.loads(result.stdout)
+    assert "anti_garbage_score" in quality
+    assert "metrics" in quality

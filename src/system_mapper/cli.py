@@ -85,6 +85,41 @@ def cmd_cluster(args: argparse.Namespace) -> None:
     emit(cluster_edge_file(args.edge_jsonl), args.json)
 
 
+def cmd_subsystem_summaries(args: argparse.Namespace) -> None:
+    """Emit subsystem-level summaries from clustered edges."""
+    from .clusters import build_subsystem_summaries, cluster_edge_file
+
+    cluster_report = cluster_edge_file(args.edge_jsonl)
+    summaries = build_subsystem_summaries(cluster_report)
+    payload = {
+        "edge_jsonl": str(args.edge_jsonl),
+        "cluster_count": cluster_report.get("cluster_count", 0),
+        "subsystem_summaries": summaries,
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        for s in summaries:
+            print(f"## {s['probable_subsystem']} ({s['cluster_id']})")
+            print(f"  why grouped: {s['why_grouped']}")
+            print(f"  nodes: {s['node_count']}, edges: {s['edge_count']}")
+            if s["main_entrypoints"]:
+                print(f"  main entrypoints: {', '.join(s['main_entrypoints'])}")
+            if s["routes"]:
+                print(f"  routes: {', '.join(s['routes'][:5])}")
+            if s["data_stores"]:
+                print(f"  data stores: {', '.join(s['data_stores'])}")
+            if s["external_systems"]:
+                print(f"  external systems: {', '.join(s['external_systems'][:3])}")
+            if s["triggers"]:
+                print(f"  triggers: {', '.join(s['triggers'])}")
+            if s["unknowns"]:
+                print(f"  unknowns: {'; '.join(s['unknowns'])}")
+            if s["claims_to_review"]:
+                print(f"  claims to review: {'; '.join(s['claims_to_review'])}")
+            print()
+
+
 def cmd_architecture_brief(args: argparse.Namespace) -> None:
     brief = build_architecture_brief(
         args.edge_jsonl,
@@ -367,6 +402,15 @@ def build_parser() -> argparse.ArgumentParser:
     cluster.add_argument("edge_jsonl", help="Path to JSONL emitted by `system-mapper graph`.")
     cluster.add_argument("--json", action="store_true")
     cluster.set_defaults(func=cmd_cluster)
+
+    # --- subsystem-summaries ---
+    ss = sub.add_parser(
+        "subsystem-summaries",
+        help="Emit subsystem-level summaries from clustered graph edges.",
+    )
+    ss.add_argument("edge_jsonl", help="Path to JSONL emitted by `system-mapper graph`.")
+    ss.add_argument("--json", action="store_true")
+    ss.set_defaults(func=cmd_subsystem_summaries)
 
     # --- architecture-brief ---
     brief = sub.add_parser(

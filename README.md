@@ -33,6 +33,7 @@ packet -> LLM worker -> evidence-backed claims -> validation -> claim store -> r
 - `merge`: recursively merge lower-level summaries while preserving claims and conflicts
 - `graph`: emit dependency/data-flow edges as JSONL, Mermaid, or DOT
 - `cluster`: group graph edges into connected subsystem communities
+- `subsystem-summaries`: emit subsystem-level summaries (probable name, entrypoints, data stores, external systems, routes, unknowns, claims to review) from clustered edges
 - `architecture-brief`: produce a human-readable architecture brief from graph edges
 - `packet`: package a bounded low-context AI work packet as JSON
 - `plan`: choose bounded next slices with token limits and ordering strategies

@@ -11,7 +11,7 @@ from .summarizer import summarize_component
 DEFAULT_TOKEN_LIMIT = 45_000
 CHARS_PER_TOKEN_ESTIMATE = 4
 
-SliceStrategy = Literal["breadth-first", "depth-first", "chronological", "dependency-aware"]
+SliceStrategy = Literal["breadth-first", "depth-first", "chronological", "dependency-aware", "uncertainty-aware"]
 OutputLayout = Literal["flat", "1-level", "2-level"]
 
 LANGUAGE_PRIORITY = {

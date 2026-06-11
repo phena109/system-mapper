@@ -63,6 +63,7 @@ The first research pass found these durable directions:
    - Generate component clusters from edges.
      - Initial implementation: `system-mapper cluster` groups graph JSONL edge records into deterministic connected subsystem/community summaries with nodes, edge kinds, participating components, hub nodes, and source-line evidence citations.
    - Emit subsystem-level summaries from lower-level summaries, preserving conflicts.
+     - Initial implementation: `system-mapper subsystem-summaries` enriches cluster output with probable subsystem names, main entrypoints, data stores, external systems, routes, triggers, unknowns, and claims to review.
 
 3. **Document freshness scoring**
    - Initial implementation: each evidence record now carries a deterministic truncated SHA-256 content revision, giving update workers a stable basis for source freshness/change checks.
