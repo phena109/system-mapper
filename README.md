@@ -45,40 +45,6 @@ uv run system-mapper next /path/to/target --output-layout flat
 
 Each run advances to the next missing planned slice. When all currently planned slices exist, `next` returns `outcome: "no_change"`.
 
-## What I learned by dogfooding it on this repo
-
-Running the tool against its own source produced two planned slices:
-
-- `README` — docs, tests, CLI, claims, and clustering code.
-- `src/system_mapper` — planner, runner, summarizer, packet, quality, worker, merge, update, inventory, and models code.
-
-The useful path was:
-
-```bash
-rm -rf /tmp/system-mapper-dogfood
-mkdir -p /tmp/system-mapper-dogfood
-
-uv run system-mapper plan . \
-  --output-root /tmp/system-mapper-dogfood \
-  --output-layout flat \
-  --json > /tmp/system-mapper-dogfood/plan.json
-
-uv run system-mapper next . \
-  --output-root /tmp/system-mapper-dogfood \
-  --output-layout flat
-
-uv run system-mapper next . \
-  --output-root /tmp/system-mapper-dogfood \
-  --output-layout flat
-
-uv run system-mapper architecture-brief \
-  /tmp/system-mapper-dogfood/edges/src-system-mapper.jsonl
-```
-
-The architecture brief identified `src/system_mapper/runner.py` as the likely entry point for the automated slice loop, with core direct relationships to `packet.py`, `planner.py`, `summarizer.py`, and `claims.py`. That matched the source: the `next` command calls `run_next_slice`, which plans work, writes a packet, writes a summary, and writes edges.
-
-The dogfood run also exposed an important limitation: a generated component summary scored `0.783` against the default `0.8` quality threshold. The quality gate flagged vague language and weak high-confidence support. Treat generated maps as orientation until the quality gate passes or a human reviews the claims.
-
 ## Scenario: inspect the plan before writing artifacts
 
 Use `plan` when you want to see the slices before generating summaries:
@@ -258,6 +224,12 @@ uv run system-mapper merge \
 ```
 
 Merge preserves conflicts and can enrich the result from the claim store.
+
+## Dogfood run: system-mapper mapping itself
+
+The README above is intentionally focused on the common usage path. For a fuller worked example, see [Dogfood run results](docs/dogfood-run.md). It shows real command output from running `system-mapper` against this repository, including inventory, slice planning, `next`, manual slice/graph/packet generation, graph clustering, architecture briefs, worker prompt generation, validation, claim import, quality checks, merge, update, prompts, and benchmark evaluation.
+
+The key lesson from the current run: the tool is useful for orientation and evidence packaging, but its own quality gate flagged generated summaries below the default threshold. Treat generated maps as reviewable evidence bundles, not final truth.
 
 ## Command reference
 
