@@ -45,6 +45,27 @@ uv run system-mapper next /path/to/target --output-layout flat
 
 Each run advances to the next missing planned slice. When all currently planned slices exist, `next` returns `outcome: "no_change"`.
 
+For a simple repeat-until-done loop, capture the JSON output and stop when `no_change` appears:
+
+```bash
+TARGET=/path/to/target
+while true; do
+  uv run system-mapper next "$TARGET" --output-layout flat > /tmp/system-mapper-next.json
+  cat /tmp/system-mapper-next.json
+  python - <<'PY'
+import json
+from pathlib import Path
+outcome = json.loads(Path('/tmp/system-mapper-next.json').read_text()).get('outcome')
+raise SystemExit(0 if outcome == 'no_change' else 1)
+PY
+  if [ $? -eq 0 ]; then
+    break
+  fi
+done
+```
+
+That loop is intentionally dumb: it only advances deterministic artifacts. Review summaries, run workers, validate claims, and run the quality gate as separate steps.
+
 ## Scenario: inspect the plan before writing artifacts
 
 Use `plan` when you want to see the slices before generating summaries:
@@ -230,6 +251,10 @@ Merge preserves conflicts and can enrich the result from the claim store.
 The README above is intentionally focused on the common usage path. For a fuller worked example, see [Dogfood run results](docs/dogfood-run.md). It shows real command output from running `system-mapper` against this repository, including inventory, slice planning, `next`, manual slice/graph/packet generation, graph clustering, architecture briefs, worker prompt generation, validation, claim import, quality checks, merge, update, prompts, and benchmark evaluation.
 
 The key lesson from the current run: the tool is useful for orientation and evidence packaging, but its own quality gate flagged generated summaries below the default threshold. Treat generated maps as reviewable evidence bundles, not final truth.
+
+## Agent skill
+
+Agents and LLM coding assistants can load [`skills/system-mapper/SKILL.md`](skills/system-mapper/SKILL.md) for a compact operating guide covering the `next` loop, worker/validation flow, quality gate, merge/update workflows, and dogfooding expectations.
 
 ## Command reference
 

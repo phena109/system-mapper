@@ -2,10 +2,13 @@
 
 This page shows a real `system-mapper` run against the `system-mapper` repository itself. The point is not to present the generated output as perfect truth. The point is to show what the tool actually produces across its main capabilities, where it helps, and where the quality gate warns that the output still needs review.
 
-Run location used for this pass:
+Run metadata:
 
 ```text
-/tmp/system-mapper-dogfood-full-1781194217
+Dogfood run date: 2026-06-12T02:34:42+10:00
+Repository commit mapped: 9a9cfb947f248b617347d67253951808322b49f3
+Short hash: 9a9cfb9
+Artifact root: /tmp/system-mapper-dogfood-full-1781194217
 ```
 
 Repository state used for this pass:
