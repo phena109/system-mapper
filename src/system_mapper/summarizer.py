@@ -891,7 +891,6 @@ def summarize_component(root: Path, paths: list[str], component: str, exclude_pa
     name = component
     # --- Filtering Logic Start ---
     if exclude_patterns or exclude_list:
-        print("Applying exclusion filters...") # Debugging aid for implementation tracking
         # Convert glob patterns to regex-safe strings if necessary, but for now, treat as literal match targets
         # In a real implementation, glob patterns should be expanded to regexes matching path components.
         # For this MVP, we check if the full relative path matches any pattern/list item.
