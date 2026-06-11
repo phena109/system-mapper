@@ -1515,7 +1515,115 @@ def test_eval_map_usefulness():
     assert report.mapped_correct >= 1  # At least the entry_point question should match
 
 
+# --- quality module ---
+
+def test_quality_report_scores_evidence_backed_map_as_passing():
+    from system_mapper.quality import evaluate_map_quality
+
+    system_map = {
+        "component": "checkout/payment",
+        "evidence_ledger": [
+            {"id": "ev.route.001", "source": "src/routes.py", "line_start": 4, "line_end": 6, "excerpt": "@router.post('/pay')", "freshness": "sha256:abc"},
+            {"id": "ev.handler.001", "source": "src/routes.py", "line_start": 8, "line_end": 12, "excerpt": "def pay():", "freshness": "sha256:def"},
+        ],
+        "claims": [
+            {"claim_type": "entry_point", "statement": "Payment requests enter through the /pay route.", "evidence_ids": ["ev.route.001", "ev.handler.001"], "confidence": "high", "status": "accepted", "scope": "src/routes.py"},
+            {"claim_type": "unknown", "statement": "Runtime payment gateway credentials were not inspected.", "evidence_ids": ["ev.handler.001"], "confidence": "low", "status": "needs_review", "scope": "src/routes.py"},
+        ],
+        "unknowns": [{"question": "Which gateway is configured in production?"}],
+        "conflicts": [],
+    }
+
+    report = evaluate_map_quality(system_map)
+
+    assert report.passed is True
+    assert report.metrics["claim_evidence_coverage"] == 1.0
+    assert report.metrics["citation_validity"] == 1.0
+    assert report.metrics["high_confidence_support"] == 1.0
+    assert report.metrics["unknown_visibility"] == 1.0
+    assert report.anti_garbage_score >= 0.8
+    assert not report.failures
+
+
+def test_quality_report_flags_garbage_map_with_measurable_failures():
+    from system_mapper.quality import evaluate_map_quality
+
+    system_map = {
+        "component": "checkout/payment",
+        "evidence_ledger": [
+            {"id": "ev.real.001", "source": "src/routes.py", "line_start": 4, "line_end": 6, "excerpt": "@router.post('/pay')", "freshness": "sha256:abc"},
+        ],
+        "claims": [
+            {"claim_type": "purpose", "statement": "The system clearly handles every payment safely.", "evidence_ids": [], "confidence": "high", "status": "accepted"},
+            {"claim_type": "owner", "statement": "Billing owns all checkout behaviour.", "evidence_ids": ["ev.fake.999"], "confidence": "medium", "status": "accepted"},
+            {"claim_type": "dependency", "statement": "It always calls Stripe.", "evidence_ids": ["ev.real.001"], "confidence": "high", "status": "accepted"},
+        ],
+        "unknowns": [],
+        "conflicts": [],
+    }
+
+    report = evaluate_map_quality(system_map)
+
+    assert report.passed is False
+    assert report.metrics["claim_evidence_coverage"] < 1.0
+    assert report.metrics["citation_validity"] < 1.0
+    assert report.metrics["high_confidence_support"] < 1.0
+    assert report.metrics["unknown_visibility"] == 0.0
+    assert report.metrics["vague_language_rate"] > 0.0
+    assert report.anti_garbage_score < 0.8
+    assert any("claim_evidence_coverage" in failure for failure in report.failures)
+    assert any("citation_validity" in failure for failure in report.failures)
+
+
 # --- CLI integration tests ---
+
+def test_cli_quality_command_reports_measurable_score(tmp_path: Path):
+    import json
+    import subprocess
+    import sys
+
+    packet = {
+        "component": "checkout/payment",
+        "evidence_ledger": [
+            {"id": "ev.route.001", "source": "src/routes.py", "line_start": 4, "line_end": 6, "excerpt": "@router.post('/pay')", "freshness": "sha256:abc"},
+            {"id": "ev.handler.001", "source": "src/routes.py", "line_start": 8, "line_end": 12, "excerpt": "def pay():", "freshness": "sha256:def"},
+        ],
+    }
+    validated_output = {
+        "accepted_claims": [
+            {"claim_type": "entry_point", "statement": "Payment requests enter through the /pay route.", "evidence_ids": ["ev.route.001", "ev.handler.001"], "confidence": "high", "status": "accepted"},
+        ],
+        "warnings": ["Unknown preserved: Which gateway is configured in production?"],
+        "unknowns": [{"question": "Which gateway is configured in production?"}],
+    }
+    packet_path = tmp_path / "packet.json"
+    validated_path = tmp_path / "validated.json"
+    packet_path.write_text(json.dumps(packet), encoding="utf-8")
+    validated_path.write_text(json.dumps(validated_output), encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "system_mapper.cli",
+            "quality",
+            str(validated_path),
+            "--evidence-source",
+            str(packet_path),
+            "--min-score",
+            "0.8",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    output = json.loads(result.stdout)
+    assert output["passed"] is True
+    assert output["anti_garbage_score"] >= 0.8
+    assert output["metrics"]["claim_evidence_coverage"] == 1.0
+
 
 def test_cli_worker_run_generates_prompt(tmp_path: Path):
     """Test that worker run without llm-command generates a prompt."""

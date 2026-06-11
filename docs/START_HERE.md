@@ -137,6 +137,7 @@ A first mapping pass is useful when it gives you:
 - at least one summary that separates evidence from interpretation;
 - edge records with source files and, where detected, source lines;
 - unknowns that point to the next inspection or human question;
-- no confident claims that exceed the inspected scope.
+- no confident claims that exceed the inspected scope;
+- `uv run system-mapper quality <artifact>.json --min-score 0.8` passes, with `claim_evidence_coverage` and `citation_validity` at `1.0`.
 
 Do not aim for a beautiful full-system map on day one. Aim for trustworthy small maps that can be recombined.

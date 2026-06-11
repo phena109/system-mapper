@@ -13,6 +13,41 @@ Use this rough trust order when reading summaries:
 5. **Inferences from filenames and folder structure** — weak; keep as hypotheses.
 6. **Missing evidence** — should become an unknown, not a guessed answer.
 
+## Anti-garbage quality gate
+
+If an output reads like polished architecture prose but cannot be checked, treat it as garbage. Run the measurable gate before relying on a summary, packet, merged map, or validated worker output:
+
+```bash
+uv run system-mapper quality .system-map/components/app-overview.json --min-score 0.8
+```
+
+When scoring worker or validation output, pass the original packet or summary as the evidence source so citation IDs can be resolved:
+
+```bash
+uv run system-mapper quality .system-map/workers/next.validated.json \
+  --evidence-source .system-map/packets/next.json \
+  --min-score 0.8
+```
+
+For CI or autonomous runs, make weak maps fail explicitly:
+
+```bash
+uv run system-mapper quality .system-map/components/app-overview.json --min-score 0.8 --fail-on-garbage
+```
+
+The report includes an `anti_garbage_score` from 0.0 to 1.0 plus component metrics:
+
+| Metric | Target | Why it matters |
+| --- | ---: | --- |
+| `claim_evidence_coverage` | `1.0` | Every claim must cite at least one evidence ID. |
+| `citation_validity` | `1.0` | Every cited evidence ID must exist in the map/packet evidence ledger. |
+| `high_confidence_support` | `1.0` | High-confidence claims need at least two valid citations and precise wording. |
+| `vague_language_rate` | `<= 0.10` | Words like “clearly”, “always”, “never”, and “every” usually signal overclaiming. |
+| `unsupported_accepted_rate` | `0.0` | Accepted claims must not contain missing or empty citations. |
+| `unknown_visibility` | prefer `1.0` | If runtime behaviour, ownership, or production config was not inspected, say so. |
+
+A passing score does **not** prove the map is true. It only says the artifact is structured enough to review: claims are cited, citations resolve, high-confidence statements have stronger support, and uncertainty has not been hidden.
+
 ## Strong vs weak claims
 
 A strong claim names its evidence:

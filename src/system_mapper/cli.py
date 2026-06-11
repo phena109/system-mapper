@@ -15,6 +15,7 @@ from .merge import merge_component_summaries
 from .packet import build_work_packet
 from .planner import DEFAULT_TOKEN_LIMIT, build_slice_plan
 from .prompts import build_prompt
+from .quality import evaluate_map_quality
 from .runner import run_next_slice
 from .summarizer import summarize_component
 from .update import update_summary_from_diff
@@ -277,6 +278,36 @@ def cmd_eval_create_benchmark(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# New command: quality
+# ---------------------------------------------------------------------------
+
+def cmd_quality(args: argparse.Namespace) -> None:
+    """Score a system map for evidence-backed, non-garbage output."""
+    system_map = json.loads(Path(args.system_map).read_text(encoding="utf-8"))
+    if args.evidence_source:
+        evidence_source = json.loads(Path(args.evidence_source).read_text(encoding="utf-8"))
+        system_map = _merge_quality_evidence(system_map, evidence_source)
+    report = evaluate_map_quality(system_map, min_score=args.min_score)
+    print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+    if args.fail_on_garbage and not report.passed:
+        raise SystemExit(1)
+
+
+def _merge_quality_evidence(system_map: dict, evidence_source: dict) -> dict:
+    """Attach packet/summary evidence to worker or validation output for scoring."""
+    merged = dict(system_map)
+    for key in ("evidence_ledger", "evidence", "summary", "scope", "component", "unknowns", "conflicts"):
+        if key in evidence_source and key not in merged:
+            merged[key] = evidence_source[key]
+    if "evidence_ledger" in evidence_source and "evidence_ledger" in system_map:
+        merged["evidence_ledger"] = [
+            *evidence_source.get("evidence_ledger", []),
+            *system_map.get("evidence_ledger", []),
+        ]
+    return merged
+
+
+# ---------------------------------------------------------------------------
 # Parser
 # ---------------------------------------------------------------------------
 
@@ -448,6 +479,14 @@ def build_parser() -> argparse.ArgumentParser:
     eval_create = sub.add_parser("eval-create-benchmark", help="Create a sample benchmark file.")
     eval_create.add_argument("--output", default=".system-map/benchmarks/sample.json")
     eval_create.set_defaults(func=cmd_eval_create_benchmark)
+
+    # --- quality ---
+    quality = sub.add_parser("quality", help="Score a system map with measurable anti-garbage checks.")
+    quality.add_argument("system_map", help="Path to a component summary, merged map, packet, worker output, or validated JSON file.")
+    quality.add_argument("--evidence-source", help="Optional packet/summary JSON providing the evidence ledger for worker or validated output.")
+    quality.add_argument("--min-score", type=float, default=0.8, help="Minimum anti-garbage score required to pass.")
+    quality.add_argument("--fail-on-garbage", action="store_true", help="Exit non-zero when the quality gate fails.")
+    quality.set_defaults(func=cmd_quality)
 
     return parser
 

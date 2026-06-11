@@ -41,6 +41,7 @@ packet -> LLM worker -> evidence-backed claims -> validation -> claim store -> r
 - `worker run`: run a weak LLM over a packet and produce evidence-backed claims
 - `validate`: validate worker output against the packet's evidence
 - `claim import/list/manage`: store, query, and merge validated claims
+- `quality`: score map artifacts with measurable anti-garbage checks
 
 ## Start here
 
@@ -75,6 +76,12 @@ uv run system-mapper validate .system-map/workers/next.worker.json .system-map/p
 
 # Import accepted claims into the claim store
 uv run system-mapper claim import .system-map/workers/next.validated.json
+
+# Fail the map if it looks like uncited/vague generated garbage
+uv run system-mapper quality .system-map/workers/next.validated.json \
+  --evidence-source .system-map/packets/next.json \
+  --min-score 0.8 \
+  --fail-on-garbage
 
 # Choose the next slice based on investigation value
 uv run system-mapper next /path/to/repo --strategy uncertainty-aware
