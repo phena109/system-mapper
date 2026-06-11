@@ -32,7 +32,7 @@ JS_ROUTE_CHAIN_RE = re.compile(
     r"\b(?:app|router)\s*\.\s*route\s*\(\s*[\"']([^\"']+)[\"']\s*\)\s*\.\s*(get|post|put|patch|delete|options|head)\s*\(",
     re.I,
 )
-C_LIKE_EXTS = {".php", ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".java", ".cs", ".go"}
+C_LIKE_EXTS = {".php", ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".java", ".cs", ".go", ".rs"}
 
 # Noise symbols that should never become architecture nodes.
 # These are language builtins, test-framework helpers, and assertion/mocking
@@ -345,6 +345,13 @@ GO_SYMBOL_RE = re.compile(
     re.M,
 )
 GO_IMPORT_RE = re.compile(r"^\s*(?:[A-Za-z_][\w]*\s+)?[\"']([^\"']+)[\"']", re.M)
+RUST_SYMBOL_RE = re.compile(
+    r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([A-Za-z_][\w]*)\s*\("
+    r"|^\s*(?:pub(?:\([^)]*\))?\s+)?(?:struct|enum|trait)\s+([A-Za-z_][\w]*)",
+    re.M,
+)
+RUST_MOD_RE = re.compile(r"^\s*(?:pub\s+)?mod\s+([A-Za-z_][\w]*)\s*;", re.M)
+RUST_STRUCT_LITERAL_RE = re.compile(r"\b([A-Z][A-Za-z0-9_]*)\s*\{")
 C_LIKE_SYMBOL_RE = re.compile(
     r"^\s*(?:public|private|protected|static|final|abstract|async|extern|inline|virtual|const|unsigned|signed|long|short|struct\s+|enum\s+|class\s+)*"
     r"(?:[A-Za-z_][\w:<>,*&\[\]\s]+\s+)+([A-Za-z_][\w]*)\s*\([^;{}]*\)\s*(?:\{|=>)"
@@ -390,6 +397,8 @@ def _c_like_symbols(text: str, suffix: str) -> list[str]:
         pattern = PHP_SYMBOL_RE
     elif suffix == ".go":
         pattern = GO_SYMBOL_RE
+    elif suffix == ".rs":
+        pattern = RUST_SYMBOL_RE
     else:
         pattern = C_LIKE_SYMBOL_RE
     found: list[str] = []
@@ -797,6 +806,45 @@ def _go_call_edges(rel: str, text: str) -> list[Edge]:
     return targets
 
 
+def _rust_internal_dependencies(root: Path, path: Path, text: str) -> list[tuple[str, int | None]]:
+    targets: list[tuple[str, int | None]] = []
+    seen: set[str] = set()
+    for line_number, module in ((match.start(), match.group(1)) for match in RUST_MOD_RE.finditer(text)):
+        # Convert regex byte offset to a stable source line citation.
+        source_line = text[:line_number].count("\n") + 1
+        rel_parent = path.parent
+        candidates = [rel_parent / f"{module}.rs", rel_parent / module / "mod.rs"]
+        for candidate in candidates:
+            resolved = candidate.resolve()
+            if resolved.is_file() and resolved.is_relative_to(root):
+                target = str(resolved.relative_to(root))
+                if target not in seen:
+                    targets.append((target, source_line))
+                    seen.add(target)
+                break
+    return targets
+
+
+def _rust_call_edges(rel: str, text: str) -> list[Edge]:
+    defined = set(_c_like_symbols(text, ".rs"))
+    targets: list[Edge] = []
+    seen: set[str] = set()
+    declaration_prefixes = ("fn ", "pub fn ", "pub(crate) fn ", "pub(super) fn ", "async fn ", "pub async fn ", "struct ", "pub struct ", "enum ", "pub enum ", "trait ", "pub trait ", "impl ", "mod ", "pub mod ", "use ")
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith(declaration_prefixes):
+            continue
+        names = [*C_LIKE_CALL_RE.findall(line), *RUST_STRUCT_LITERAL_RE.findall(line)]
+        for name in names:
+            if name not in defined or name in seen:
+                continue
+            if _is_noise_symbol(name, ".rs"):
+                continue
+            targets.append(Edge("call", rel, f"{rel}:{name}", "medium", line_number))
+            seen.add(name)
+    return targets
+
+
 def _ruby_internal_dependencies(root: Path, path: Path, text: str) -> list[tuple[str, int | None]]:
     targets: list[tuple[str, int | None]] = []
     seen: set[str] = set()
@@ -868,6 +916,9 @@ def _c_like_internal_dependencies(root: Path, path: Path, text: str) -> list[tup
     if suffix == ".go":
         return _go_internal_dependencies(root, text)
 
+    if suffix == ".rs":
+        return _rust_internal_dependencies(root, path, text)
+
     if suffix in {".c", ".h", ".cpp", ".hpp", ".cc", ".cxx"}:
         for line_number, line in enumerate(text.splitlines(), start=1):
             for specifier in C_INCLUDE_RE.findall(line):
@@ -882,6 +933,8 @@ def _c_like_call_edges(path: Path, root: Path, text: str) -> list[Edge]:
         rel = str(path)
     if path.suffix.lower() == ".go":
         return _go_call_edges(rel, text)
+    if path.suffix.lower() == ".rs":
+        return _rust_call_edges(rel, text)
     targets: list[Edge] = []
     seen: set[tuple[str, int]] = set()
     skip_names = {

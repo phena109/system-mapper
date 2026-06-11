@@ -695,6 +695,43 @@ func main() {
     assert call_targets == {"cmd/api/main.go:NewServer", "cmd/api/main.go:Serve"}
 
 
+def test_summary_emits_rust_symbols_module_edges_and_same_file_calls(tmp_path: Path):
+    write(tmp_path / "src" / "auth.rs", "pub fn issue_token() -> String { String::new() }\n")
+    write(
+        tmp_path / "src" / "main.rs",
+        """
+mod auth;
+
+pub struct MapServer {}
+
+impl MapServer {
+    pub fn serve(&self) {
+        refresh_map();
+    }
+}
+
+fn refresh_map() {}
+
+fn main() {
+    let server = MapServer {};
+    server.serve();
+}
+""".strip(),
+    )
+
+    summary = summarize_component(tmp_path, ["src/main.rs"], component="rust/app")
+
+    assert "src/main.rs:MapServer" in summary.entry_points
+    assert "src/main.rs:serve" in summary.entry_points
+    assert "src/main.rs:refresh_map" in summary.entry_points
+    assert "src/main.rs:main" in summary.entry_points
+    edges = {(edge.kind, edge.target, edge.source_line) for edge in summary.edges}
+    assert ("internal", "src/auth.rs", 1) in edges
+    assert ("call", "src/main.rs:refresh_map", 7) in edges
+    assert ("call", "src/main.rs:MapServer", 14) in edges
+    assert ("call", "src/main.rs:serve", 15) in edges
+
+
 def test_summary_emits_php_symbols_calls_routes_and_internal_edges(tmp_path: Path):
     write(tmp_path / "src" / "Auth" / "Token.php", "<?php\nfunction issueToken() { return 'token'; }\n")
     write(
