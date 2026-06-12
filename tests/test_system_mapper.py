@@ -213,6 +213,40 @@ def test_cli_slice_exclude_filters_noisy_paths_before_mapping(tmp_path: Path):
     assert "Documentation freshness not verified" not in payload["unknowns"]
 
 
+def test_cli_reset_removes_generated_system_map_folder_inside_project(tmp_path: Path):
+    write(tmp_path / ".system-map" / "components" / "app.json", "{}\n")
+    write(tmp_path / "src" / "app.py", "def main():\n    return 'ok'\n")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "system_mapper.cli", "reset", str(tmp_path), "--json"],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload == {"removed": True, "path": str(tmp_path / ".system-map")}
+    assert not (tmp_path / ".system-map").exists()
+    assert (tmp_path / "src" / "app.py").exists()
+
+
+def test_cli_reset_is_successful_when_system_map_folder_is_absent(tmp_path: Path):
+    result = subprocess.run(
+        [sys.executable, "-m", "system_mapper.cli", "reset", str(tmp_path), "--json"],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload == {"removed": False, "path": str(tmp_path / ".system-map")}
+    assert tmp_path.exists()
+
+
 def test_cli_prompt_outputs_low_context_ai_contract():
     result = subprocess.run(
         [sys.executable, "-m", "system_mapper.cli", "prompt", "slice", "--component", "billing/export"],

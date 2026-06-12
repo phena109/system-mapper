@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -177,6 +178,17 @@ def cmd_next(args: argparse.Namespace) -> None:
         ),
         True,
     )
+
+
+def cmd_reset(args: argparse.Namespace) -> None:
+    """Remove the generated .system-map folder from a project root."""
+    system_map_path = Path(args.root) / ".system-map"
+    removed = system_map_path.exists() or system_map_path.is_symlink()
+    if system_map_path.is_symlink() or system_map_path.is_file():
+        system_map_path.unlink()
+    elif system_map_path.exists():
+        shutil.rmtree(system_map_path)
+    emit({"removed": removed, "path": str(system_map_path)}, args.json)
 
 
 # ---------------------------------------------------------------------------
@@ -466,6 +478,12 @@ def build_parser() -> argparse.ArgumentParser:
     nxt.add_argument("--output-layout", choices=["flat", "1-level", "2-level"], default="2-level")
     nxt.add_argument("--claim-store", default=".system-map/claims.json", help="Path to claim store for uncertainty-aware strategy.")
     nxt.set_defaults(func=cmd_next)
+
+    # --- reset ---
+    reset = sub.add_parser("reset", aliases=["remove", "delete"], help="Remove the generated .system-map folder inside a project root.")
+    reset.add_argument("root", help="Project root containing the generated .system-map folder.")
+    reset.add_argument("--json", action="store_true")
+    reset.set_defaults(func=cmd_reset)
 
     # --- prompt ---
     prompt = sub.add_parser("prompt", help="Emit reusable low-context AI prompts for system mapping.")

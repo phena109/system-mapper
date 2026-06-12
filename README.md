@@ -45,6 +45,14 @@ uv run system-mapper next /path/to/target --output-layout flat
 
 Each run advances to the next missing planned slice. When all currently planned slices exist, `next` returns `outcome: "no_change"`.
 
+To discard generated mapping artifacts for a project and start over, remove only the in-project `.system-map/` folder:
+
+```bash
+uv run system-mapper reset /path/to/target
+```
+
+`reset` intentionally targets `/path/to/target/.system-map/`; external output roots are not reset by this command.
+
 For a simple repeat-until-done loop, capture the JSON output and stop when `no_change` appears:
 
 ```bash
