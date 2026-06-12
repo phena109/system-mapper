@@ -418,15 +418,39 @@ def test_graph_clusters_group_connected_edges_and_preserve_evidence_sources():
     report = cluster_edge_records(records)
 
     assert report["cluster_count"] == 2
+    assert report["node_count"] == 6
+    assert report["edge_count"] == 4
     first = report["clusters"][0]
     assert first["id"] == "cluster-001"
     assert first["nodes"] == ["POST /invoices", "invoices", "src/api.py", "src/service.py"]
+    assert first["node_count"] == 4
     assert first["edge_count"] == 3
     assert first["edge_kinds"] == ["data_store", "internal", "route"]
     assert first["components"] == ["billing/api", "billing/service"]
     assert first["evidence_sources"] == ["src/api.py:2", "src/api.py:10", "src/service.py:4"]
     assert "src/api.py" in first["hub_nodes"]
     assert report["clusters"][1]["nodes"] == ["config/schedule.yml", "cron schedule"]
+
+
+def test_subsystem_names_skip_generic_source_roots():
+    from system_mapper.clusters import build_subsystem_summaries
+
+    summaries = build_subsystem_summaries(
+        {
+            "clusters": [
+                {
+                    "id": "cluster-001",
+                    "nodes": ["src/system_mapper/runner.py", "src/system_mapper/planner.py"],
+                    "edge_count": 1,
+                    "edge_kinds": ["internal"],
+                    "components": ["src/system_mapper/runner", "src/system_mapper/planner"],
+                    "hub_nodes": ["src/system_mapper/runner.py"],
+                }
+            ]
+        }
+    )
+
+    assert summaries[0]["probable_subsystem"] == "system_mapper"
 
 
 def test_cli_cluster_reads_graph_jsonl_and_emits_component_communities(tmp_path: Path):

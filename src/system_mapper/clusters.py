@@ -120,10 +120,12 @@ def cluster_edge_records(records: list[dict[str, Any]]) -> dict[str, Any]:
 
     clusters: list[dict[str, Any]] = []
     for index, (nodes, cluster_records) in enumerate(components, start=1):
+        sorted_nodes = sorted(nodes)
         clusters.append(
             {
                 "id": f"cluster-{index:03d}",
-                "nodes": sorted(nodes),
+                "nodes": sorted_nodes,
+                "node_count": len(sorted_nodes),
                 "edge_count": len(cluster_records),
                 "edge_kinds": sorted({str(record.get("kind", "unknown")) for record in cluster_records}),
                 "components": sorted({str(record.get("component")) for record in cluster_records if record.get("component")}),
@@ -138,6 +140,8 @@ def cluster_edge_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "input_edges": len(records),
         "cluster_count": len(clusters),
+        "node_count": sum(cluster.get("node_count", 0) for cluster in clusters),
+        "edge_count": sum(cluster.get("edge_count", 0) for cluster in clusters),
         "clusters": clusters,
     }
 
@@ -170,27 +174,38 @@ def _classify_node_role(node: str, edge_kinds: list[str] | None = None) -> str:
     return "data_store"
 
 
+GENERIC_SUBSYSTEM_ROOTS = {"src", "lib", "app", "apps", "pkg", "packages", "cmd", "internal", "source", "sources"}
+
+
+def _meaningful_name_parts(pathish: str) -> list[str]:
+    original_parts = [part for part in pathish.split("/") if part]
+    parts = list(original_parts)
+    while parts and parts[0].lower() in GENERIC_SUBSYSTEM_ROOTS:
+        parts = parts[1:]
+    if len(parts) == 1 and "." in parts[0] and original_parts:
+        return original_parts[:1]
+    return parts
+
+
 def _guess_subsystem_name(nodes: list[str], components: list[str]) -> str:
     """Guess a probable subsystem name from cluster components and nodes."""
-    # Prefer component names — they carry domain meaning
+    # Prefer component names — they carry domain meaning. Skip generic source
+    # roots so dogfood clusters do not all become indistinguishable "src".
     if components:
-        # Use the most common prefix among components
-        parts_list = [c.split("/") for c in components if c]
-        if parts_list:
-            first_parts = [p[0] for p in parts_list if p]
-            if first_parts:
-                from collections import Counter
-                most_common = Counter(first_parts).most_common(1)[0][0]
-                # If multiple components share a prefix, use it
-                count = sum(1 for p in first_parts if p == most_common)
-                if count > 1:
-                    return most_common
-                return components[0].split("/")[0]
-    # Fallback: use the most common file directory
+        from collections import Counter
+
+        parts_list = [_meaningful_name_parts(c) for c in components if c]
+        first_parts = [parts[0] for parts in parts_list if parts]
+        if first_parts:
+            most_common = Counter(first_parts).most_common(1)[0][0]
+            return most_common
+    # Fallback: use the most common non-generic file directory
     dirs: list[str] = []
     for node in nodes:
         if "/" in node:
-            dirs.append(node.split("/")[0])
+            parts = _meaningful_name_parts(node)
+            if parts:
+                dirs.append(parts[0])
     if dirs:
         from collections import Counter
         return Counter(dirs).most_common(1)[0][0]
