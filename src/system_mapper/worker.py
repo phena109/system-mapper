@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .claims import CLAIM_TYPES, CONFIDENCE_LEVELS, ClaimRecord, ClaimStore, ValidationResult, validate_worker_output
+from .planner import CHARS_PER_TOKEN_ESTIMATE
 
 
 # ---------------------------------------------------------------------------
@@ -87,6 +88,29 @@ Output schema:
 def get_worker_contract() -> str:
     """Return the strict worker prompt contract."""
     return WORKER_CONTRACT
+
+
+def _prompt_budget_metrics(prompt: str) -> dict[str, Any]:
+    """Return rough prompt-size signals for low-context/local worker handoff."""
+    char_count = len(prompt)
+    estimated_tokens = max(1, (char_count + CHARS_PER_TOKEN_ESTIMATE - 1) // CHARS_PER_TOKEN_ESTIMATE)
+    if estimated_tokens >= 8_000:
+        local_worker_risk = "high"
+        recommendation = "Use a smaller slice, narrower paths, or packet compression before calling a small/local LLM."
+    elif estimated_tokens >= 4_000:
+        local_worker_risk = "medium"
+        recommendation = "Review prompt size before calling a small/local LLM; consider a smaller slice if output quality drops."
+    else:
+        local_worker_risk = "low"
+        recommendation = "Prompt is likely suitable for a small bounded worker packet."
+    return {
+        "char_count": char_count,
+        "estimated_tokens": estimated_tokens,
+        "chars_per_token_estimate": CHARS_PER_TOKEN_ESTIMATE,
+        "local_worker_risk": local_worker_risk,
+        "compression_recommended": local_worker_risk == "high",
+        "recommendation": recommendation,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +285,7 @@ def run_worker(
         # Return the prompt for external processing
         worker_output = {
             "_prompt": prompt,
+            "_prompt_metrics": _prompt_budget_metrics(prompt),
             "_packet_path": str(packet_path),
             "_model": model,
             "_status": "prompt_generated",

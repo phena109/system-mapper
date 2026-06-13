@@ -1905,6 +1905,41 @@ def test_cli_worker_run_generates_prompt(tmp_path: Path):
     assert "low-context system-mapping worker" in output["_prompt"]
 
 
+def test_cli_worker_run_reports_prompt_budget_metrics(tmp_path: Path):
+    """Worker prompt bundles should expose size signals before a local LLM is called."""
+    packet = {
+        "contract": "system-mapper.work-packet.v1",
+        "component": "docs/large",
+        "scope": ["docs/large.md"],
+        "summary": {"purpose": "large handoff", "evidence_excerpt": "x" * 33000},
+        "evidence_ledger": [],
+        "edge_records": [],
+        "claim_records": [],
+        "unknowns": [],
+        "next_actions": [],
+    }
+    packet_path = tmp_path / "large-packet.json"
+    packet_path.write_text(json.dumps(packet), encoding="utf-8")
+
+    import subprocess, sys
+    result = subprocess.run(
+        [sys.executable, "-m", "system_mapper.cli", "worker", "run", str(packet_path)],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    output = json.loads(result.stdout)
+    metrics = output["_prompt_metrics"]
+    assert metrics["char_count"] == len(output["_prompt"])
+    assert metrics["estimated_tokens"] >= metrics["char_count"] // 4
+    assert metrics["local_worker_risk"] == "high"
+    assert metrics["compression_recommended"] is True
+    assert "smaller slice" in metrics["recommendation"]
+
+
 def test_cli_validate_command(tmp_path: Path):
     """Test the validate CLI command."""
     import subprocess, sys, json
