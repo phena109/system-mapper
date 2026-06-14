@@ -1669,6 +1669,28 @@ def test_claims_from_worker_output():
     assert claims[0].component == "test/component"
 
 
+def test_worker_run_max_prompt_tokens_blocks_oversized_llm_call_before_invocation(tmp_path: Path):
+    from system_mapper.worker import run_worker
+
+    packet = tmp_path / "packet.json"
+    marker = tmp_path / "llm-was-called.txt"
+    packet.write_text(
+        json.dumps({"component": "large/slice", "scope": ["src/large.py"], "summary": {"purpose": "x" * 200}}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError) as error:
+        run_worker(
+            packet,
+            llm_command=f"{sys.executable} -c \"from pathlib import Path; Path(r'{marker}').write_text('called'); print('{{}}')\"",
+            max_prompt_tokens=1,
+        )
+
+    assert "exceeds --max-prompt-tokens=1" in str(error.value)
+    assert "estimated_tokens" in str(error.value)
+    assert not marker.exists()
+
+
 # --- eval module ---
 
 def test_eval_load_benchmark(tmp_path: Path):

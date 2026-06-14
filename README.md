@@ -171,14 +171,17 @@ uv run system-mapper worker run \
   --output .system-map/workers/<slice>.worker.json
 ```
 
-To call a local command, pass the command that should read the prompt from stdin and write JSON to stdout:
+To call a local command, pass the command that should read the prompt from stdin and write JSON to stdout. Add `--max-prompt-tokens` when using small/local models so oversized packets fail before the model is invoked:
 
 ```bash
 uv run system-mapper worker run \
   .system-map/packets/<slice>.json \
   --llm-command 'ollama run qwen3:4b' \
+  --max-prompt-tokens 8000 \
   --output .system-map/workers/<slice>.worker.json
 ```
+
+If the generated prompt exceeds the budget, rerun `next` or `packet` with a narrower slice before spending a local worker call.
 
 Then validate and import the claims:
 

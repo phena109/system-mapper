@@ -202,6 +202,7 @@ def cmd_worker_run(args: argparse.Namespace) -> None:
         model=args.model,
         output_path=args.output,
         llm_command=args.llm_command,
+        max_prompt_tokens=args.max_prompt_tokens,
     )
     if not args.output:
         print(json.dumps(result, indent=2, sort_keys=True))
@@ -500,6 +501,11 @@ def build_parser() -> argparse.ArgumentParser:
     worker_run.add_argument("--model", default="local", help="Model identifier (e.g. qwen3-4b).")
     worker_run.add_argument("--output", help="Output path for worker JSON.")
     worker_run.add_argument("--llm-command", help="LLM command to run (e.g. 'ollama run qwen3:4b'). If omitted, prints the prompt for external processing.")
+    worker_run.add_argument(
+        "--max-prompt-tokens",
+        type=int,
+        help="Refuse to call --llm-command when the generated prompt exceeds this rough token budget.",
+    )
     worker_run.set_defaults(func=cmd_worker_run)
 
     # --- validate ---

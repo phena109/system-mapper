@@ -256,6 +256,7 @@ def run_worker(
     model: str = "local",
     output_path: Path | str | None = None,
     llm_command: str | None = None,
+    max_prompt_tokens: int | None = None,
 ) -> dict[str, Any]:
     """Run a weak LLM worker over a packet.
 
@@ -267,8 +268,14 @@ def run_worker(
     """
     packet = json.loads(Path(packet_path).read_text(encoding="utf-8"))
 
-    # Build the full prompt
     prompt = WORKER_CONTRACT + "\n\n--- PACKET ---\n" + json.dumps(packet, indent=2)
+    prompt_metrics = _prompt_budget_metrics(prompt)
+
+    if max_prompt_tokens is not None and prompt_metrics["estimated_tokens"] > max_prompt_tokens:
+        raise RuntimeError(
+            f"Prompt estimated_tokens={prompt_metrics['estimated_tokens']} exceeds --max-prompt-tokens={max_prompt_tokens}; "
+            f"{prompt_metrics['recommendation']}"
+        )
 
     if llm_command:
         result = subprocess.run(
@@ -285,7 +292,7 @@ def run_worker(
         # Return the prompt for external processing
         worker_output = {
             "_prompt": prompt,
-            "_prompt_metrics": _prompt_budget_metrics(prompt),
+            "_prompt_metrics": prompt_metrics,
             "_packet_path": str(packet_path),
             "_model": model,
             "_status": "prompt_generated",
