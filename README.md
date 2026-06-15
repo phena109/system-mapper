@@ -163,7 +163,7 @@ First generate a packet:
 uv run system-mapper next /path/to/target --output-layout flat
 ```
 
-If you omit `--llm-command`, `worker run` writes a prompt bundle for external processing instead of calling a model. The bundle includes `_prompt_metrics` with rough character/token counts and a local-worker risk recommendation, so small-model handoffs can be narrowed before a prompt is wasted:
+If you omit `--llm-command`, `worker run` writes a prompt bundle for external processing instead of calling a model. The bundle includes `_prompt_metrics` with rough character/token counts, a stable-contract vs per-slice packet size split, a cache-prefix hint, and a local-worker risk recommendation, so small-model handoffs can be narrowed before a prompt is wasted:
 
 ```bash
 uv run system-mapper worker run \

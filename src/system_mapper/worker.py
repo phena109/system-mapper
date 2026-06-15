@@ -90,8 +90,19 @@ def get_worker_contract() -> str:
     return WORKER_CONTRACT
 
 
-def _prompt_budget_metrics(prompt: str) -> dict[str, Any]:
-    """Return rough prompt-size signals for low-context/local worker handoff."""
+def _prompt_budget_metrics(
+    prompt: str,
+    *,
+    static_contract: str = "",
+    packet_text: str = "",
+) -> dict[str, Any]:
+    """Return rough prompt-size signals for low-context/local worker handoff.
+
+    The split between the stable worker contract and per-slice packet helps
+    operators decide whether repeated worker calls can benefit from provider
+    prompt-cache prefixes while still showing when the dynamic packet is too
+    large for a small/local model.
+    """
     char_count = len(prompt)
     estimated_tokens = max(1, (char_count + CHARS_PER_TOKEN_ESTIMATE - 1) // CHARS_PER_TOKEN_ESTIMATE)
     if estimated_tokens >= 8_000:
@@ -103,10 +114,16 @@ def _prompt_budget_metrics(prompt: str) -> dict[str, Any]:
     else:
         local_worker_risk = "low"
         recommendation = "Prompt is likely suitable for a small bounded worker packet."
+    static_contract_char_count = len(static_contract)
+    packet_char_count = len(packet_text)
     return {
         "char_count": char_count,
         "estimated_tokens": estimated_tokens,
         "chars_per_token_estimate": CHARS_PER_TOKEN_ESTIMATE,
+        "static_contract_char_count": static_contract_char_count,
+        "packet_char_count": packet_char_count,
+        "cacheable_prefix": "worker_contract" if static_contract_char_count else "none",
+        "cache_hint": "Keep the stable worker contract before the per-slice packet when using provider prompt caching.",
         "local_worker_risk": local_worker_risk,
         "compression_recommended": local_worker_risk == "high",
         "recommendation": recommendation,
@@ -268,8 +285,14 @@ def run_worker(
     """
     packet = json.loads(Path(packet_path).read_text(encoding="utf-8"))
 
-    prompt = WORKER_CONTRACT + "\n\n--- PACKET ---\n" + json.dumps(packet, indent=2)
-    prompt_metrics = _prompt_budget_metrics(prompt)
+    packet_text = json.dumps(packet, indent=2)
+    static_contract = WORKER_CONTRACT + "\n\n--- PACKET ---\n"
+    prompt = static_contract + packet_text
+    prompt_metrics = _prompt_budget_metrics(
+        prompt,
+        static_contract=static_contract,
+        packet_text=packet_text,
+    )
 
     if max_prompt_tokens is not None and prompt_metrics["estimated_tokens"] > max_prompt_tokens:
         raise RuntimeError(

@@ -1960,6 +1960,11 @@ def test_cli_worker_run_reports_prompt_budget_metrics(tmp_path: Path):
     assert metrics["local_worker_risk"] == "high"
     assert metrics["compression_recommended"] is True
     assert "smaller slice" in metrics["recommendation"]
+    assert metrics["static_contract_char_count"] > 0
+    assert metrics["packet_char_count"] > 33000
+    assert metrics["static_contract_char_count"] + metrics["packet_char_count"] == metrics["char_count"]
+    assert metrics["cacheable_prefix"] == "worker_contract"
+    assert "stable worker contract" in metrics["cache_hint"]
 
 
 def test_cli_validate_command(tmp_path: Path):

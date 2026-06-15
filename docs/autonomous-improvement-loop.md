@@ -41,7 +41,10 @@ These are prompts for future bounded runs, not approval to build all of them at 
 Public provider documentation and announcements reinforce this runbook's bias toward explicit prompt-size and context-management signals before using a model:
 
 - OpenAI API text generation documentation: https://platform.openai.com/docs/guides/text?api-mode=responses
+- OpenAI prompt caching documentation: https://platform.openai.com/docs/guides/prompt-caching
 - Anthropic prompt engineering overview: https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/overview
+- Anthropic prompt caching documentation: https://platform.claude.com/docs/en/build-with-claude/prompt-caching.md
+- Anthropic context windows documentation: https://platform.claude.com/docs/en/build-with-claude/context-windows.md
 - Anthropic prompt caching announcement: https://www.anthropic.com/news/prompt-caching
 
-Treat these sources as directional support for efficient bounded prompts, not as product requirements.
+Treat these sources as directional support for efficient bounded prompts, stable-prefix reuse, and explicit context-size management, not as product requirements.
