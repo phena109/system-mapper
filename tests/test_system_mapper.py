@@ -1967,6 +1967,44 @@ def test_cli_worker_run_reports_prompt_budget_metrics(tmp_path: Path):
     assert "stable worker contract" in metrics["cache_hint"]
 
 
+def test_cli_worker_run_reports_largest_packet_sections_for_narrowing(tmp_path: Path):
+    """Oversized worker packets should point operators to the sections worth narrowing."""
+    packet = {
+        "contract": "system-mapper.work-packet.v1",
+        "component": "docs/large",
+        "scope": ["docs/large.md"],
+        "summary": {"purpose": "large handoff", "evidence_excerpt": "s" * 12000},
+        "evidence_ledger": [
+            {"id": f"ev.{idx:03d}", "source": "docs/large.md", "excerpt": "e" * 300}
+            for idx in range(20)
+        ],
+        "edge_records": [{"kind": "internal", "source": "a", "target": "b"}],
+        "claim_records": [],
+        "unknowns": [],
+        "next_actions": [],
+    }
+    packet_path = tmp_path / "section-heavy-packet.json"
+    packet_path.write_text(json.dumps(packet), encoding="utf-8")
+
+    import subprocess, sys
+    result = subprocess.run(
+        [sys.executable, "-m", "system_mapper.cli", "worker", "run", str(packet_path)],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    metrics = json.loads(result.stdout)["_prompt_metrics"]
+    sections = metrics["largest_packet_sections"]
+    assert [section["name"] for section in sections[:2]] == ["summary", "evidence_ledger"]
+    assert sections[0]["char_count"] > sections[1]["char_count"] > 0
+    assert sections[0]["estimated_tokens"] >= sections[0]["char_count"] // 4
+    assert "summary" in metrics["narrowing_hint"]
+    assert "evidence_ledger" in metrics["narrowing_hint"]
+
+
 def test_cli_validate_command(tmp_path: Path):
     """Test the validate CLI command."""
     import subprocess, sys, json

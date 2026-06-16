@@ -181,7 +181,7 @@ uv run system-mapper worker run \
   --output .system-map/workers/<slice>.worker.json
 ```
 
-If the generated prompt exceeds the budget, rerun `next` or `packet` with a narrower slice before spending a local worker call.
+If the generated prompt exceeds the budget, rerun `next` or `packet` with a narrower slice before spending a local worker call. The generated worker bundle includes `_prompt_metrics.largest_packet_sections` and a `_prompt_metrics.narrowing_hint` so a low-context operator can see whether `summary`, `evidence_ledger`, `edge_records`, or another packet section is dominating the prompt.
 
 Then validate and import the claims:
 

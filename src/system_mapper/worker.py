@@ -95,13 +95,16 @@ def _prompt_budget_metrics(
     *,
     static_contract: str = "",
     packet_text: str = "",
+    packet: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return rough prompt-size signals for low-context/local worker handoff.
 
     The split between the stable worker contract and per-slice packet helps
     operators decide whether repeated worker calls can benefit from provider
     prompt-cache prefixes while still showing when the dynamic packet is too
-    large for a small/local model.
+    large for a small/local model. Per-section packet sizes point operators to
+    the exact part of an oversized handoff worth narrowing before spending a
+    weak/local model call.
     """
     char_count = len(prompt)
     estimated_tokens = max(1, (char_count + CHARS_PER_TOKEN_ESTIMATE - 1) // CHARS_PER_TOKEN_ESTIMATE)
@@ -116,6 +119,13 @@ def _prompt_budget_metrics(
         recommendation = "Prompt is likely suitable for a small bounded worker packet."
     static_contract_char_count = len(static_contract)
     packet_char_count = len(packet_text)
+    largest_packet_sections = _largest_packet_sections(packet or {})
+    narrowing_names = [section["name"] for section in largest_packet_sections[:2]]
+    narrowing_hint = (
+        "Largest packet sections: " + ", ".join(narrowing_names) + "; narrow these first when reducing prompt size."
+        if narrowing_names
+        else "No packet sections available for narrowing guidance."
+    )
     return {
         "char_count": char_count,
         "estimated_tokens": estimated_tokens,
@@ -127,7 +137,22 @@ def _prompt_budget_metrics(
         "local_worker_risk": local_worker_risk,
         "compression_recommended": local_worker_risk == "high",
         "recommendation": recommendation,
+        "largest_packet_sections": largest_packet_sections,
+        "narrowing_hint": narrowing_hint,
     }
+
+
+def _largest_packet_sections(packet: dict[str, Any], *, limit: int = 5) -> list[dict[str, Any]]:
+    sections: list[dict[str, Any]] = []
+    for name, value in packet.items():
+        serialized = json.dumps(value, indent=2, sort_keys=True)
+        char_count = len(serialized)
+        sections.append({
+            "name": str(name),
+            "char_count": char_count,
+            "estimated_tokens": max(1, (char_count + CHARS_PER_TOKEN_ESTIMATE - 1) // CHARS_PER_TOKEN_ESTIMATE),
+        })
+    return sorted(sections, key=lambda section: (-section["char_count"], section["name"]))[:limit]
 
 
 # ---------------------------------------------------------------------------
@@ -292,6 +317,7 @@ def run_worker(
         prompt,
         static_contract=static_contract,
         packet_text=packet_text,
+        packet=packet,
     )
 
     if max_prompt_tokens is not None and prompt_metrics["estimated_tokens"] > max_prompt_tokens:
