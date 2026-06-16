@@ -327,6 +327,18 @@ What this demonstrates:
 - `prompt slice` exposes a reusable slice-analysis prompt.
 - These are useful when a human or orchestration system wants to call an LLM outside `system-mapper worker run`.
 
+## Autonomous dogfood rule
+
+This repository now has a 100-hour autonomous dogfood loop. Each run should map or inspect the project against itself, run the quality gate on the most representative generated/reviewed artifacts it creates, and persist the resulting score history in `docs/dogfood-quality-history.jsonl` so later runs can compare direction instead of treating each score as a one-off observation.
+
+The quality-gate score is an operational metric, not a target to game. The autonomous worker should normally keep the metric calculation stable and improve the product around it. Changing how the metric is calculated is only appropriate when there is clear evidence that the metric is misleading, and that change should be justified separately from score movement.
+
+Score-aware improvement rule:
+
+- If the latest score **decreases** or **stays the same** compared with the previous persisted run, the next improvement should focus on objectives likely to make generated maps more reviewable and drive the score back up. Examples include stronger evidence packaging, clearer citations, lower overconfidence, smaller packets, better claim wording, or more actionable failure reports. The change should be justified and progressive rather than a radical rewrite.
+- If the latest score **increases**, the next improvement can broaden beyond direct score recovery: documentation, code/comment polish, experimental but bounded ideas, minor-situation coverage, tests, benchmark questions, dogfood ergonomics, or other self-improvement work.
+- Every run should report the previous score, latest score, selected direction, files changed, verification command output, commit/push result, and the next recommended objective.
+
 ## Overall findings from this dogfood pass
 
 Useful now:
