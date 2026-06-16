@@ -329,7 +329,7 @@ What this demonstrates:
 
 ## Autonomous dogfood rule
 
-This repository now has a 100-hour autonomous dogfood loop. Each run should map or inspect the project against itself, run the quality gate on the most representative generated/reviewed artifacts it creates, and persist the resulting score history in `docs/dogfood-quality-history.jsonl` so later runs can compare direction instead of treating each score as a one-off observation.
+This repository has a scheduled autonomous dogfood loop. The schedule is operationally configurable and may change over time. Each run should map or inspect the project against itself, run the quality gate on the most representative generated/reviewed artifacts it creates, and persist the resulting score history in `docs/dogfood-quality-history.jsonl` so later runs can compare direction instead of treating each score as a one-off observation.
 
 The quality-gate score is an operational metric, not a target to game. The autonomous worker should normally keep the metric calculation stable and improve the product around it. Changing how the metric is calculated is only appropriate when there is clear evidence that the metric is misleading, and that change should be justified separately from score movement.
 

@@ -1,6 +1,6 @@
 # Autonomous Improvement Loop
 
-This repository is improved by a scheduled dogfood scout/worker that runs every 100 hours and makes one bounded, verified change at a time. The loop uses the quality-gate score as a persistent operational metric, recorded across runs in `docs/dogfood-quality-history.jsonl`, so each run can compare direction instead of treating quality as a one-off observation.
+This repository is improved by a scheduled dogfood scout/worker that makes one bounded, verified change at a time. The schedule is operationally configurable and may change over time. The loop uses the quality-gate score as a persistent operational metric, recorded across runs in `docs/dogfood-quality-history.jsonl`, so each run can compare direction instead of treating quality as a one-off observation.
 
 ## Scope and non-drift rule
 
