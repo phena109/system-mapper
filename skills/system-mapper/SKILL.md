@@ -16,6 +16,8 @@ metadata:
 
 Use `system-mapper` to help low-context humans or LLM workers understand a repository one bounded slice at a time. Do not ask a model to read an entire large repo and invent a polished architecture story. Instead, let the CLI produce bounded evidence packages, graph edges, worker packets, and quality reports.
 
+Current product course: learn from adjacent projects while preserving the differentiator. Aim to cover most useful explanatory/frontend capabilities from Understand-Anything and graph-backend/query capabilities from codebase-memory-mcp, but keep weak/cheap LLM decomposition, both frontend and backend surfaces, and adaptation to code changes as the primary direction.
+
 Core loop:
 
 ```text

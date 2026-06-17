@@ -12,6 +12,8 @@ This repository is improved by a scheduled dogfood scout/worker that makes one b
 - low-context worker packets and prompt contracts;
 - living-change update and quality/evaluation workflows.
 
+The current product course is to learn as much as practical from Understand-Anything and codebase-memory-mcp, with a target of delivering at least 80% of their useful general capabilities without copying their product identity. The non-negotiable differentiators are weak/cheap LLM decomposition, both frontend and backend surfaces, and adaptation to new changes. See `docs/competitive-learning-course.md` before selecting larger roadmap-shaped work.
+
 Do not turn the project into a generic chatbot, generic RAG application, generic code search tool, or unrelated developer assistant.
 
 ## Required run shape
@@ -42,6 +44,7 @@ These are prompts for future bounded runs, not approval to build all of them at 
 3. **Quality-driven reruns and score recovery:** quality failures should point to the exact claim/evidence weakness and suggest narrower remapping where possible. When the persisted representative score decreases or stays flat, prioritize progressive improvements that make the next score more likely to recover without gaming the metric.
 4. **Living-change workflow:** `update`, claim freshness, and uncertainty-aware planning should make stale claims easy to find after a diff.
 5. **Evaluation realism:** benchmark examples should evolve from sample command coverage toward project-specific questions that test whether maps help a worker answer real maintenance questions.
+6. **Competitive learning:** periodically compare against Understand-Anything's explanatory/frontend strengths and codebase-memory-mcp's deterministic backend/query strengths; convert useful gaps into bounded tasks that preserve the weak/cheap-LLM and living-map positioning.
 
 ## Recent research basis
 

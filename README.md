@@ -1,8 +1,10 @@
 # system-mapper
 
-`system-mapper` helps a low-context human or small LLM understand a repository one bounded slice at a time.
+`system-mapper` helps a low-context human or small/cheap LLM understand a repository one bounded slice at a time.
 
 It does **not** try to produce a perfect architecture document in one pass. It plans small slices, extracts deterministic evidence from files, writes machine-readable summaries and graph edges, packages work for an LLM worker, validates claims against evidence IDs, and keeps uncertainty visible.
+
+Current product course: learn aggressively from adjacent tools such as Understand-Anything and codebase-memory-mcp, aiming to deliver at least 80% of their useful explanatory frontend and graph-backend capabilities while preserving `system-mapper`'s own differentiation: weak/cheap LLM decomposition, both frontend and backend surfaces, and adaptation to new code changes. Deterministic work should stay deterministic; use an LLM when it answers the interpretation question more easily, but keep generated claims cited, validated, or explicitly uncertain. See [Competitive learning course](docs/competitive-learning-course.md).
 
 Core loop:
 
