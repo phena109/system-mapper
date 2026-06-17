@@ -19,6 +19,7 @@ from .packet import build_work_packet
 from .planner import DEFAULT_TOKEN_LIMIT, build_slice_plan
 from .prompts import build_prompt
 from .quality import evaluate_map_quality
+from .report import build_map_report
 from .runner import run_next_slice
 from .summarizer import summarize_component
 from .update import update_summary_from_diff
@@ -157,6 +158,18 @@ def cmd_map_query(args: argparse.Namespace) -> None:
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
         print(result["answer_context"] or "No matching mapped components found.")
+
+
+def cmd_map_report(args: argparse.Namespace) -> None:
+    result = build_map_report(
+        args.root,
+        output_root=args.output_root,
+        reading_limit=args.reading_limit,
+    )
+    if args.json:
+        print(json.dumps(result, indent=2, sort_keys=True))
+    else:
+        print(result["markdown"], end="")
 
 
 def cmd_adr_add(args: argparse.Namespace) -> None:
@@ -402,6 +415,13 @@ def _merge_quality_evidence(system_map: dict, evidence_source: dict) -> dict:
     return merged
 
 
+def non_negative_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("reading-limit must be non-negative")
+    return parsed
+
+
 # ---------------------------------------------------------------------------
 # Parser
 # ---------------------------------------------------------------------------
@@ -505,6 +525,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     mq.add_argument("--json", action="store_true")
     mq.set_defaults(func=cmd_map_query)
+
+    # --- map-report ---
+    mr = sub.add_parser(
+        "map-report",
+        help="Render a human-readable report and guided reading path from existing .system-map artifacts.",
+    )
+    mr.add_argument("root", help="Project root containing .system-map, or the .system-map directory itself.")
+    mr.add_argument("--output-root", default=".system-map", help="Generated map directory under root.")
+    mr.add_argument("--reading-limit", type=non_negative_int, default=8, help="Maximum components to include in the guided reading path.")
+    mr.add_argument("--json", action="store_true")
+    mr.set_defaults(func=cmd_map_report)
 
     # --- adr ---
     adr = sub.add_parser("adr", help="Manage machine-readable Architecture Decision Records for a mapped system.")

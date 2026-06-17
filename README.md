@@ -171,6 +171,15 @@ uv run system-mapper map-query /path/to/target "where is login session created?"
 
 `map-query` searches `.system-map/components/*.json`, pulls in connected `.system-map/edges/*.jsonl` records, and emits an `answer_context` block with claims, evidence IDs, related graph edges, and optional source snippets for a low-context human or LLM.
 
+To turn existing map artifacts into a human-readable onboarding surface with an overview, guided reading path, component details, unknowns, evidence examples, and ADRs, render a map report:
+
+```bash
+uv run system-mapper map-report /path/to/target
+uv run system-mapper map-report /path/to/target --json
+```
+
+`map-report` is the lightweight front-end/readable-report slice: it borrows the explanatory purpose of Understand-Anything without hiding uncertainty or replacing deterministic artifacts with free-form architecture prose.
+
 To persist architectural decisions alongside the map, use the ADR store:
 
 ```bash

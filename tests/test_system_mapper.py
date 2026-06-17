@@ -459,6 +459,116 @@ def test_cli_map_query_can_output_source_snippets(tmp_path: Path):
     assert "## Source snippets" in payload["answer_context"]
 
 
+def test_map_report_builds_human_readable_tour_from_existing_artifacts(tmp_path: Path):
+    from system_mapper.report import build_map_report
+
+    write(
+        tmp_path / ".system-map" / "components" / "auth.json",
+        json.dumps(
+            {
+                "component": "auth/api",
+                "purpose": "Handles login sessions.",
+                "scope": ["src/auth/api.py"],
+                "confidence": {"purpose": "high"},
+                "unknowns": ["Password reset flow not mapped."],
+                "claims": [
+                    {
+                        "id": "claim-auth-purpose",
+                        "text": "Login creates a session token.",
+                        "confidence": "high",
+                        "evidence_refs": ["ev-login-route"],
+                    }
+                ],
+                "evidence_ledger": [
+                    {
+                        "id": "ev-login-route",
+                        "source": "src/auth/api.py",
+                        "line_start": 5,
+                        "kind": "route_edge",
+                        "excerpt": "@router.post('/login')",
+                    }
+                ],
+            }
+        ),
+    )
+    write(
+        tmp_path / ".system-map" / "components" / "billing.json",
+        json.dumps({"component": "billing", "purpose": "Exports invoices.", "scope": ["src/billing.py"], "unknowns": []}),
+    )
+    write(
+        tmp_path / ".system-map" / "edges" / "auth.jsonl",
+        json.dumps(
+            {
+                "component": "auth/api",
+                "kind": "internal",
+                "source": "src/auth/api.py",
+                "target": "src/auth/session.py",
+                "confidence": "medium",
+                "source_line": 7,
+            }
+        )
+        + "\n",
+    )
+    write(
+        tmp_path / ".system-map" / "architecture-decisions.json",
+        json.dumps(
+            [
+                {
+                    "id": "adr-0001",
+                    "title": "Keep auth map artifacts",
+                    "status": "accepted",
+                    "decision": "Commit compact JSON map artifacts.",
+                }
+            ]
+        ),
+    )
+
+    report = build_map_report(tmp_path)
+
+    assert report["component_count"] == 2
+    assert report["edge_count"] == 1
+    assert report["reading_path"][0]["component"] == "auth/api"
+    assert report["reading_path"][0]["edge_count"] == 1
+    assert "# System map report" in report["markdown"]
+    assert "## Guided reading path" in report["markdown"]
+    assert "auth/api" in report["markdown"]
+    assert "Password reset flow not mapped." in report["markdown"]
+    assert "adr-0001" in report["markdown"]
+
+
+def test_cli_map_report_outputs_markdown(tmp_path: Path):
+    write(
+        tmp_path / ".system-map" / "components" / "auth.json",
+        json.dumps({"component": "auth/api", "purpose": "Handles login sessions.", "scope": ["src/auth/api.py"]}),
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-m", "system_mapper.cli", "map-report", str(tmp_path)],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    assert "# System map report" in result.stdout
+    assert "auth/api" in result.stdout
+    assert "Handles login sessions." in result.stdout
+
+
+def test_cli_map_report_rejects_negative_reading_limit(tmp_path: Path):
+    result = subprocess.run(
+        [sys.executable, "-m", "system_mapper.cli", "map-report", str(tmp_path), "--reading-limit", "-1"],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    assert result.returncode != 0
+    assert "reading-limit must be non-negative" in result.stderr
+
+
 def test_architecture_decision_store_adds_lists_and_filters_records(tmp_path: Path):
     from system_mapper.adr import add_decision, list_decisions
 
