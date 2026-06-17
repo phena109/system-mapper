@@ -344,6 +344,121 @@ def test_cli_map_query_outputs_search_context_json(tmp_path: Path):
     assert "## auth/api" in payload["answer_context"]
 
 
+def test_map_query_can_include_source_snippets_from_evidence_and_edges(tmp_path: Path):
+    from system_mapper.map_query import query_system_map
+
+    write(
+        tmp_path / "src" / "auth" / "api.py",
+        "\n".join(
+            [
+                "from fastapi import APIRouter",
+                "",
+                "router = APIRouter()",
+                "",
+                "@router.post('/login')",
+                "def login():",
+                "    return create_session()",
+            ]
+        )
+        + "\n",
+    )
+    write(
+        tmp_path / ".system-map" / "components" / "auth.json",
+        json.dumps(
+            {
+                "component": "auth/api",
+                "purpose": "Handles login sessions.",
+                "scope": ["src/auth/api.py"],
+                "evidence_ledger": [
+                    {
+                        "id": "ev-login-route",
+                        "source": "src/auth/api.py",
+                        "line_start": 5,
+                        "line_end": 6,
+                        "kind": "route_edge",
+                        "excerpt": "@router.post('/login')",
+                        "freshness": "sha256:test",
+                    }
+                ],
+            }
+        ),
+    )
+    write(
+        tmp_path / ".system-map" / "edges" / "auth.jsonl",
+        json.dumps(
+            {
+                "component": "auth/api",
+                "kind": "route",
+                "source": "src/auth/api.py",
+                "target": "POST /login",
+                "confidence": "high",
+                "source_line": 5,
+            }
+        )
+        + "\n",
+    )
+
+    result = query_system_map(tmp_path, "login session", include_snippets=True)
+
+    assert result["source_snippets"]
+    assert result["source_snippets"][0]["source"] == "src/auth/api.py"
+    assert "@router.post" in result["source_snippets"][0]["excerpt"]
+    assert "## Source snippets" in result["answer_context"]
+    assert "src/auth/api.py" in result["answer_context"]
+
+
+def test_cli_map_query_can_output_source_snippets(tmp_path: Path):
+    write(
+        tmp_path / "src" / "auth" / "api.py",
+        "\n".join(
+            [
+                "from fastapi import APIRouter",
+                "",
+                "router = APIRouter()",
+                "",
+                "@router.post('/login')",
+                "def login():",
+                "    return create_session()",
+            ]
+        )
+        + "\n",
+    )
+    write(
+        tmp_path / ".system-map" / "components" / "auth.json",
+        json.dumps(
+            {
+                "component": "auth/api",
+                "purpose": "Handles login sessions.",
+                "scope": ["src/auth/api.py"],
+                "evidence_ledger": [
+                    {
+                        "id": "ev-login-route",
+                        "source": "src/auth/api.py",
+                        "line_start": 5,
+                        "line_end": 6,
+                        "kind": "route_edge",
+                        "excerpt": "@router.post('/login')",
+                    }
+                ],
+            }
+        ),
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-m", "system_mapper.cli", "map-query", str(tmp_path), "login", "--json", "--snippets"],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["source_snippets"]
+    assert "@router.post" in payload["source_snippets"][0]["excerpt"]
+    assert "## Source snippets" in payload["answer_context"]
+
+
 def test_architecture_decision_store_adds_lists_and_filters_records(tmp_path: Path):
     from system_mapper.adr import add_decision, list_decisions
 

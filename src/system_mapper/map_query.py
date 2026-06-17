@@ -100,7 +100,113 @@ def _edge_touches_summary(edge: dict[str, Any], summary: dict[str, Any]) -> bool
     return any(source.startswith(path) or target.startswith(path) for path in scope)
 
 
-def _format_answer_context(matches: list[dict[str, Any]], related_edges: list[dict[str, Any]]) -> str:
+def _project_root_from_map_root(root: Path | str, map_root: Path, output_root: str) -> Path:
+    root_path = Path(root)
+    if root_path.name == output_root or root_path.name == ".system-map":
+        return root_path.parent
+    return root_path
+
+
+def _coerce_line(value: Any) -> int | None:
+    try:
+        line = int(value)
+    except (TypeError, ValueError):
+        return None
+    return line if line > 0 else None
+
+
+def _safe_relative_source(project_root: Path, source: str) -> Path | None:
+    if not source:
+        return None
+    source_path = Path(source)
+    if source_path.is_absolute():
+        return None
+    candidate = (project_root / source_path).resolve()
+    try:
+        candidate.relative_to(project_root.resolve())
+    except ValueError:
+        return None
+    return candidate
+
+
+def _read_source_excerpt(project_root: Path, source: str, line: int | None, radius: int) -> dict[str, Any] | None:
+    source_path = _safe_relative_source(project_root, source)
+    if source_path is None or line is None or not source_path.is_file():
+        return None
+    try:
+        lines = source_path.read_text(encoding="utf-8").splitlines()
+    except UnicodeDecodeError:
+        return None
+    except OSError:
+        return None
+    if not lines:
+        return None
+    bounded_radius = max(0, radius)
+    anchor = min(max(line, 1), len(lines))
+    line_start = max(1, anchor - bounded_radius)
+    line_end = min(len(lines), anchor + bounded_radius)
+    excerpt = "\n".join(lines[line_start - 1 : line_end])
+    return {
+        "source": source,
+        "line_start": line_start,
+        "line_end": line_end,
+        "anchor_line": anchor,
+        "excerpt": excerpt,
+    }
+
+
+def _snippet_candidates(matches: list[dict[str, Any]], related_edges: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for match in matches:
+        summary = match["summary"]
+        component = str(summary.get("component", ""))
+        for record in summary.get("evidence_ledger", []) or []:
+            if not isinstance(record, dict):
+                continue
+            source = str(record.get("source", ""))
+            line = _coerce_line(record.get("line_start")) or _coerce_line(record.get("line_end"))
+            if source and line:
+                candidates.append({"component": component, "source": source, "line": line, "origin": "evidence", "id": record.get("id", "")})
+    for edge in related_edges:
+        source = str(edge.get("source", ""))
+        line = _coerce_line(edge.get("source_line"))
+        if source and line:
+            candidates.append({"component": str(edge.get("component", "")), "source": source, "line": line, "origin": "edge", "id": edge.get("kind", "")})
+    return candidates
+
+
+def _collect_source_snippets(
+    project_root: Path,
+    matches: list[dict[str, Any]],
+    related_edges: list[dict[str, Any]],
+    *,
+    radius: int,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    snippets: list[dict[str, Any]] = []
+    seen: set[tuple[str, int, int]] = set()
+    for candidate in _snippet_candidates(matches, related_edges):
+        excerpt = _read_source_excerpt(project_root, str(candidate["source"]), _coerce_line(candidate["line"]), radius)
+        if excerpt is None:
+            continue
+        key = (excerpt["source"], int(excerpt["line_start"]), int(excerpt["line_end"]))
+        if key in seen:
+            continue
+        seen.add(key)
+        excerpt["component"] = candidate.get("component", "")
+        excerpt["origin"] = candidate.get("origin", "")
+        excerpt["id"] = candidate.get("id", "")
+        snippets.append(excerpt)
+        if len(snippets) >= limit:
+            break
+    return snippets
+
+
+def _format_answer_context(
+    matches: list[dict[str, Any]],
+    related_edges: list[dict[str, Any]],
+    source_snippets: list[dict[str, Any]] | None = None,
+) -> str:
     lines: list[str] = []
     for match in matches:
         summary = match["summary"]
@@ -134,10 +240,27 @@ def _format_answer_context(matches: list[dict[str, Any]], related_edges: list[di
                 f"- {edge.get('source', '')} --[{edge.get('kind', '')}]--> {edge.get('target', '')}"
                 f" (component={edge.get('component', '')}, confidence={edge.get('confidence', '')})"
             )
+    if source_snippets:
+        if lines and lines[-1] != "":
+            lines.append("")
+        lines.append("## Source snippets")
+        for snippet in source_snippets:
+            lines.append(f"- {snippet.get('source', '')}:{snippet.get('line_start', '')}-{snippet.get('line_end', '')}")
+            lines.append("```text")
+            lines.append(str(snippet.get("excerpt", "")))
+            lines.append("```")
     return "\n".join(lines).strip()
 
 
-def query_system_map(root: Path | str, query: str, *, limit: int = 5, output_root: str = ".system-map") -> dict[str, Any]:
+def query_system_map(
+    root: Path | str,
+    query: str,
+    *,
+    limit: int = 5,
+    output_root: str = ".system-map",
+    include_snippets: bool = False,
+    snippet_radius: int = 2,
+) -> dict[str, Any]:
     """Search generated map artifacts and return compact graph-expanded context.
 
     This borrows the purpose of Understand Anything's chat-context builder and
@@ -175,6 +298,13 @@ def query_system_map(root: Path | str, query: str, *, limit: int = 5, output_roo
             seen_edges.add(key)
             related_edges.append(edge)
 
+    project_root = _project_root_from_map_root(root, map_root, output_root)
+    source_snippets = (
+        _collect_source_snippets(project_root, matches, related_edges, radius=snippet_radius)
+        if include_snippets
+        else []
+    )
+
     public_matches = [
         {
             "component": match["summary"].get("component", ""),
@@ -190,6 +320,7 @@ def query_system_map(root: Path | str, query: str, *, limit: int = 5, output_roo
         "map_root": str(map_root),
         "matches": public_matches,
         "related_edges": related_edges,
-        "answer_context": _format_answer_context(matches, related_edges),
+        "source_snippets": source_snippets,
+        "answer_context": _format_answer_context(matches, related_edges, source_snippets),
         "warnings": [] if map_root.exists() else [f"Map root not found: {map_root}"],
     }

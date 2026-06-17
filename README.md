@@ -163,7 +163,13 @@ To ask a mapped repository a compact structural question without re-reading the 
 uv run system-mapper map-query /path/to/target "where is login session created?" --json
 ```
 
-`map-query` searches `.system-map/components/*.json`, pulls in connected `.system-map/edges/*.jsonl` records, and emits an `answer_context` block with claims, evidence IDs, and related graph edges for a low-context human or LLM.
+Use `--snippets` to include bounded source excerpts around matched evidence IDs and graph edge source lines, so humans and agents can answer with concrete local context without reopening the whole repository:
+
+```bash
+uv run system-mapper map-query /path/to/target "where is login session created?" --json --snippets
+```
+
+`map-query` searches `.system-map/components/*.json`, pulls in connected `.system-map/edges/*.jsonl` records, and emits an `answer_context` block with claims, evidence IDs, related graph edges, and optional source snippets for a low-context human or LLM.
 
 To persist architectural decisions alongside the map, use the ADR store:
 

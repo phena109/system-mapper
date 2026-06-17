@@ -150,6 +150,8 @@ def cmd_map_query(args: argparse.Namespace) -> None:
         args.query,
         limit=args.limit,
         output_root=args.output_root,
+        include_snippets=args.snippets,
+        snippet_radius=args.snippet_radius,
     )
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
@@ -490,6 +492,17 @@ def build_parser() -> argparse.ArgumentParser:
     mq.add_argument("query", help="Natural-language or keyword query to match against mapped summaries.")
     mq.add_argument("--limit", type=int, default=5, help="Maximum matched components to include.")
     mq.add_argument("--output-root", default=".system-map", help="Generated map directory under root.")
+    mq.add_argument(
+        "--snippets",
+        action="store_true",
+        help="Include bounded source snippets around matching evidence and graph edge source lines.",
+    )
+    mq.add_argument(
+        "--snippet-radius",
+        type=int,
+        default=2,
+        help="Number of context lines before and after each snippet anchor line.",
+    )
     mq.add_argument("--json", action="store_true")
     mq.set_defaults(func=cmd_map_query)
 
