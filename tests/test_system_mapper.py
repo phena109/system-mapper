@@ -264,6 +264,158 @@ def test_cli_prompt_outputs_low_context_ai_contract():
     assert "Machine-readable edges" in result.stdout
 
 
+def test_map_query_searches_summaries_and_expands_one_hop_graph_context(tmp_path: Path):
+    from system_mapper.map_query import query_system_map
+
+    write(
+        tmp_path / ".system-map" / "components" / "auth.json",
+        json.dumps(
+            {
+                "component": "auth/api",
+                "purpose": "Handles login sessions and user authentication.",
+                "scope": ["src/auth/api.py"],
+                "entry_points": ["src/auth/api.py:login"],
+                "claims": [
+                    {
+                        "id": "claim-auth-purpose",
+                        "type": "purpose",
+                        "text": "Login creates a session token.",
+                        "confidence": "high",
+                        "evidence_refs": ["ev-auth-route"],
+                    }
+                ],
+                "evidence_ledger": [
+                    {
+                        "id": "ev-auth-route",
+                        "source": "src/auth/api.py",
+                        "line_start": 10,
+                        "line_end": 12,
+                        "kind": "route_edge",
+                        "excerpt": "@router.post('/login')",
+                        "freshness": "sha256:auth",
+                    }
+                ],
+            }
+        ),
+    )
+    write(
+        tmp_path / ".system-map" / "components" / "billing.json",
+        json.dumps({"component": "billing", "purpose": "Exports invoices.", "scope": ["src/billing.py"]}),
+    )
+    write(
+        tmp_path / ".system-map" / "edges" / "auth.jsonl",
+        "\n".join(
+            [
+                json.dumps({"component": "auth/api", "kind": "route", "source": "src/auth/api.py", "target": "POST /login", "confidence": "high", "source_line": 10}),
+                json.dumps({"component": "auth/api", "kind": "internal", "source": "src/auth/api.py", "target": "src/auth/session.py", "confidence": "medium", "source_line": 2}),
+            ]
+        )
+        + "\n",
+    )
+
+    result = query_system_map(tmp_path, "where is login session created", limit=3)
+
+    assert result["query"] == "where is login session created"
+    assert result["matches"][0]["component"] == "auth/api"
+    assert result["matches"][0]["score"] > 0
+    assert {edge["target"] for edge in result["related_edges"]} == {"POST /login", "src/auth/session.py"}
+    assert "claim-auth-purpose" in result["answer_context"]
+    assert "ev-auth-route" in result["answer_context"]
+    assert "billing" not in [match["component"] for match in result["matches"]]
+
+
+def test_cli_map_query_outputs_search_context_json(tmp_path: Path):
+    write(
+        tmp_path / ".system-map" / "components" / "auth.json",
+        json.dumps({"component": "auth/api", "purpose": "Handles login sessions.", "scope": ["src/auth/api.py"]}),
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-m", "system_mapper.cli", "map-query", str(tmp_path), "login", "--json"],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["matches"][0]["component"] == "auth/api"
+    assert "## auth/api" in payload["answer_context"]
+
+
+def test_architecture_decision_store_adds_lists_and_filters_records(tmp_path: Path):
+    from system_mapper.adr import add_decision, list_decisions
+
+    store_path = tmp_path / ".system-map" / "architecture-decisions.json"
+
+    accepted = add_decision(
+        store_path,
+        title="Use deterministic graph evidence before LLM claims",
+        status="accepted",
+        context="Cheap workers need compact and auditable context.",
+        decision="Persist evidence-backed graph records before worker prompts.",
+        consequences="Workers can cite evidence IDs and stale claims can be detected.",
+    )
+    proposed = add_decision(
+        store_path,
+        title="Try embedded semantic search later",
+        status="proposed",
+        context="Semantic search may help vocabulary mismatch.",
+        decision="Defer until deterministic query quality is measured.",
+        consequences="No embedding dependency in the current slice.",
+    )
+
+    assert accepted["id"] == "adr-0001"
+    assert proposed["id"] == "adr-0002"
+    assert list_decisions(store_path, status="accepted") == [accepted]
+    assert [record["id"] for record in list_decisions(store_path)] == ["adr-0001", "adr-0002"]
+
+
+def test_cli_adr_add_and_list_persists_architecture_decisions(tmp_path: Path):
+    store_path = tmp_path / ".system-map" / "architecture-decisions.json"
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "system_mapper.cli",
+            "adr",
+            "add",
+            "--store",
+            str(store_path),
+            "--title",
+            "Keep map artifacts in repo",
+            "--status",
+            "accepted",
+            "--context",
+            "Team members should skip rediscovery.",
+            "--decision",
+            "Commit compact JSON map artifacts.",
+            "--consequences",
+            "Agents can reuse previous understanding.",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    listed = subprocess.run(
+        [sys.executable, "-m", "system_mapper.cli", "adr", "list", "--store", str(store_path), "--status", "accepted"],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    payload = json.loads(listed.stdout)
+    assert payload["total"] == 1
+    assert payload["decisions"][0]["title"] == "Keep map artifacts in repo"
+
+
 def test_summary_records_source_lines_for_detected_edges(tmp_path: Path):
     write(
         tmp_path / "src" / "billing.py",

@@ -157,6 +157,27 @@ uv run system-mapper subsystem-summaries .system-map/edges/src.jsonl --json
 uv run system-mapper architecture-brief .system-map/edges/src.jsonl
 ```
 
+To ask a mapped repository a compact structural question without re-reading the whole codebase, query generated summaries and expand one graph hop around the matching components:
+
+```bash
+uv run system-mapper map-query /path/to/target "where is login session created?" --json
+```
+
+`map-query` searches `.system-map/components/*.json`, pulls in connected `.system-map/edges/*.jsonl` records, and emits an `answer_context` block with claims, evidence IDs, and related graph edges for a low-context human or LLM.
+
+To persist architectural decisions alongside the map, use the ADR store:
+
+```bash
+uv run system-mapper adr add \
+  --store /path/to/target/.system-map/architecture-decisions.json \
+  --title "Keep map artifacts in repo" \
+  --status accepted \
+  --context "Team members and agents should skip rediscovery." \
+  --decision "Commit compact generated map artifacts." \
+  --consequences "Future workers can reuse previous understanding."
+uv run system-mapper adr list --store /path/to/target/.system-map/architecture-decisions.json
+```
+
 ## Scenario: use a weak/local LLM worker
 
 First generate a packet:
