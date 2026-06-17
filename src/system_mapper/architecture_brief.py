@@ -35,22 +35,6 @@ def _file_of(node: str) -> str:
     return ""
 
 
-def _is_file_node(node: str) -> bool:
-    return bool(_file_of(node))
-
-
-def _classify_node(node: str) -> str:
-    if node.startswith(("http://", "https://")):
-        return "external"
-    if " " in node and node.split(" ")[0] in {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD", "ROUTE"}:
-        return "route"
-    if "/" not in node and "." not in node and not node.startswith("cron "):
-        return "symbol"
-    if node.startswith("cron "):
-        return "trigger"
-    return "file"
-
-
 def build_architecture_brief(
     edge_jsonl: Path | str,
     *,

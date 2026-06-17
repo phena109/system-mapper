@@ -475,10 +475,6 @@ def _claim_id(component: str, claim_type: str, text: str, evidence_refs: list[st
     return _stable_id("claim", component, claim_type, text, ",".join(evidence_refs))
 
 
-def _tables(text: str) -> list[str]:
-    return [table for table, _line_number in _tables_with_lines(text)]
-
-
 def _urls_with_lines(text: str) -> list[tuple[str, int]]:
     found: list[tuple[str, int]] = []
     for line_number, line in enumerate(text.splitlines(), start=1):
@@ -662,30 +658,16 @@ def _python_internal_dependencies(root: Path, path: Path, text: str) -> list[tup
     return targets
 
 
-def _relative_js_target(root: Path, path: Path, specifier: str) -> str | None:
-    if not specifier.startswith(("./", "../")):
-        return None
-    base = (path.parent / specifier).resolve()
-    candidates: list[Path] = []
-    if base.suffix:
-        candidates.append(base)
-    else:
-        for suffix in (".ts", ".tsx", ".js", ".jsx"):
-            candidates.append(base.with_suffix(suffix))
-        for suffix in (".ts", ".tsx", ".js", ".jsx"):
-            candidates.append(base / f"index{suffix}")
-    for candidate in candidates:
-        if candidate.is_file() and candidate.is_relative_to(root):
-            return str(candidate.relative_to(root))
-    return None
-
-
 def _javascript_internal_dependencies(root: Path, path: Path, text: str) -> list[tuple[str, int | None]]:
     targets: list[tuple[str, int | None]] = []
     seen: set[str] = set()
     for line_number, line in enumerate(text.splitlines(), start=1):
         for specifier in JS_IMPORT_RE.findall(line):
-            target = _relative_js_target(root, path, specifier)
+            target = (
+                _resolve_relative_candidate(root, path, specifier, (".ts", ".tsx", ".js", ".jsx"))
+                if specifier.startswith(("./", "../"))
+                else None
+            )
             if target and target not in seen:
                 targets.append((target, line_number))
                 seen.add(target)
