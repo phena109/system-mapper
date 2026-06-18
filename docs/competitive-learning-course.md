@@ -77,22 +77,30 @@ Every LLM-produced project claim should either cite evidence, be marked as an as
 
 ## Product course
 
-Future improvements should bias toward delivering at least 80% of the useful capabilities of both reference projects while preserving system-mapper's differentiation:
+Near-term work should concentrate on the three capabilities that make maps useful after the first scan:
 
-- **Frontend 80%:** readable reports, graph navigation, subsystem tours, stale/unknown/confidence display, and change-review views.
-- **Backend 80%:** persistent/queryable map artifacts, graph search and trace, architecture overview, snippets/evidence retrieval, change detection, and agent/MCP-friendly command surfaces.
-- **Weak-agent advantage:** packet compression, slice control, evidence ledgers, validation, claim lifecycle, and quality-driven reruns.
+1. **Impact analysis** — given a diff or changed files, identify affected components, claims, edges, routes, data stores, downstream targets, stale evidence, and remapping recommendations.
+2. **Better query/search** — make existing `.system-map` artifacts useful as a local lookup surface: ranked components, symbols, claims, evidence, snippets, graph neighbors, and likely next reads.
+3. **More exact symbol extraction** — improve deterministic extraction of names, routes, calls, imports, tables, triggers, and line citations where it materially improves impact/query quality.
+
+This focus intentionally deprioritizes polished graph UI and MCP/server packaging until the underlying map is accurate and queryable enough to deserve those surfaces. Code that does not serve impact analysis, query/search, symbol extraction, evidence, validation, or weak-agent handoff is removable.
+
+Preserve system-mapper's differentiation while pursuing these priorities:
+
+- **Backend 80% first:** persistent/queryable map artifacts, graph search and trace, snippets/evidence retrieval, change detection, and affected-area routing.
 - **Adaptation advantage:** map update after diffs, changed-file prioritization, stale claim detection, uncertainty-aware remapping, and scheduled dogfood improvement.
+- **Weak-agent advantage:** packet compression, slice control, evidence ledgers, validation, claim lifecycle, and quality-driven reruns.
+- **Frontend only where it helps the loop:** readable reports and change-review views are useful; a polished graph browser is later.
 
 ## Backlog themes
 
-Use these as themes for bounded implementation tasks:
+Use these as themes for bounded implementation tasks, in order:
 
-1. **Human-facing map browser/report** — HTML or static report over existing `.system-map` artifacts.
-2. **Queryable backend** — commands or server surface for searching components, edges, evidence, claims, and snippets.
-3. **Change adaptation** — stronger `update`, stale-claim lifecycle states, changed-file to affected-component routing, and remapping recommendations.
+1. **Impact analysis** — stronger `update`, stale-claim lifecycle states, changed-file to affected-component routing, graph downstream/upstream expansion, and remapping recommendations.
+2. **Queryable backend** — commands for searching components, symbols, edges, evidence, claims, snippets, and graph neighbors from existing artifacts.
+3. **Symbol extraction** — exact-enough deterministic extraction for common languages, with line citations and deletion of noisy/low-value heuristics when they hurt results.
 4. **Weak LLM efficiency** — smaller packets, prompt-size budgets, cacheable prompt prefixes, and cheap-model-friendly output schemas.
-5. **Learning loop** — compare reference project capabilities periodically, translate useful ideas into tests/backlog items, and reject ideas that dilute the three positioning pillars.
+5. **Learning loop** — compare reference project capabilities periodically, translate useful ideas into tests/backlog items, and reject ideas that dilute these priorities.
 
 ## Non-goals
 
