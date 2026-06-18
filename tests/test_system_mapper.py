@@ -155,6 +155,83 @@ diff --git a/src/routes/maps.ts b/src/routes/maps.ts
     assert any("docs/api.md may be stale after code changes" in stale for stale in update.possibly_stale_sources)
 
 
+def test_repo_impact_analysis_routes_changed_files_to_components_claims_edges_and_refresh_commands(tmp_path: Path):
+    from system_mapper.impact import analyze_repo_impact
+
+    write(
+        tmp_path / ".system-map" / "components" / "billing.json",
+        json.dumps(
+            {
+                "component": "billing/api",
+                "scope": ["src/billing.py"],
+                "edges": [{"kind": "external", "source": "src/billing.py", "target": "https://partner.example/export"}],
+                "evidence_ledger": [{"id": "ev-1", "source": "src/billing.py"}],
+                "claims": [{"id": "claim-1", "type": "purpose", "text": "Exports invoices", "evidence_refs": ["ev-1"]}],
+            }
+        ),
+    )
+    write(
+        tmp_path / ".system-map" / "edges" / "billing.jsonl",
+        json.dumps({"component": "billing/api", "kind": "external", "source": "src/billing.py", "target": "https://partner.example/export", "source_line": 3}) + "\n"
+        + json.dumps({"component": "ops/worker", "kind": "internal", "source": "src/worker.py", "target": "src/billing.py", "source_line": 8}) + "\n",
+    )
+    diff = """
+diff --git a/src/billing.py b/src/billing.py
+@@
+-    requests.post("https://partner.example/export", json=payload)
++    requests.post("https://api.newpartner.example/v2/export", json=payload)
+"""
+
+    impact = analyze_repo_impact(tmp_path, diff=diff)
+
+    assert impact["changed_files"] == ["src/billing.py"]
+    assert impact["affected_components"][0]["component"] == "billing/api"
+    assert impact["affected_components"][0]["matched_files"] == ["src/billing.py"]
+    assert impact["stale_claims"] == [
+        {"component": "billing/api", "claim_id": "claim-1", "type": "purpose", "reason": "Evidence source changed: src/billing.py"}
+    ]
+    assert any(edge["component"] == "billing/api" and edge["direction"] == "outgoing" for edge in impact["related_edges"])
+    assert any(edge["component"] == "ops/worker" and edge["direction"] == "incoming" for edge in impact["related_edges"])
+    assert impact["refresh_commands"] == ["uv run system-mapper slice . src/billing.py --component billing/api --json"]
+
+
+def test_cli_impact_emits_repo_level_json(tmp_path: Path):
+    write(
+        tmp_path / ".system-map" / "components" / "billing.json",
+        json.dumps(
+            {
+                "component": "billing/api",
+                "scope": ["src/billing.py"],
+                "evidence_ledger": [{"id": "ev-1", "source": "src/billing.py"}],
+                "claims": [{"id": "claim-1", "type": "purpose", "evidence_refs": ["ev-1"]}],
+            }
+        ),
+    )
+    diff_path = write(
+        tmp_path / "change.diff",
+        """
+diff --git a/src/billing.py b/src/billing.py
+@@
+-print('old')
++print('new')
+""".strip(),
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-m", "system_mapper.cli", "impact", str(tmp_path), "--diff", str(diff_path), "--json"],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["changed_files"] == ["src/billing.py"]
+    assert payload["affected_components"][0]["component"] == "billing/api"
+    assert payload["stale_claims"][0]["claim_id"] == "claim-1"
+
+
 def test_cli_inventory_and_slice_emit_json(tmp_path: Path):
     write(tmp_path / "src" / "app.py", "def main():\n    return 'ok'\n")
     result = subprocess.run(

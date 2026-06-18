@@ -12,6 +12,7 @@ from .claims import ClaimStore, validate_worker_output
 from .clusters import cluster_edge_file
 from .eval import create_sample_benchmark, evaluate_map_usefulness, load_benchmark
 from .graph_formats import render_dot, render_mermaid
+from .impact import analyze_repo_impact
 from .inventory import build_inventory
 from .map_query import query_system_map
 from .merge import merge_component_summaries
@@ -170,6 +171,33 @@ def cmd_map_report(args: argparse.Namespace) -> None:
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
         print(result["markdown"], end="")
+
+
+def cmd_impact(args: argparse.Namespace) -> None:
+    diff = None
+    if args.diff:
+        diff = Path(args.diff).read_text(encoding="utf-8") if args.diff != "-" else sys.stdin.read()
+    result = analyze_repo_impact(
+        args.root,
+        diff=diff,
+        diff_from=args.diff_from,
+        output_root=args.output_root,
+    )
+    if args.json:
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+    print(f"changed files: {', '.join(result['changed_files']) or '(none)'}")
+    print("affected components:")
+    for component in result["affected_components"]:
+        print(f"- {component['component']}: {', '.join(component['matched_files'])}")
+    if result["stale_claims"]:
+        print("stale claims:")
+        for claim in result["stale_claims"]:
+            print(f"- {claim['component']}:{claim['claim_id']} — {claim['reason']}")
+    if result["refresh_commands"]:
+        print("refresh commands:")
+        for command in result["refresh_commands"]:
+            print(f"- {command}")
 
 
 def cmd_adr_add(args: argparse.Namespace) -> None:
@@ -536,6 +564,15 @@ def build_parser() -> argparse.ArgumentParser:
     mr.add_argument("--reading-limit", type=non_negative_int, default=8, help="Maximum components to include in the guided reading path.")
     mr.add_argument("--json", action="store_true")
     mr.set_defaults(func=cmd_map_report)
+
+    # --- impact ---
+    impact = sub.add_parser("impact", help="Analyze repo-level change impact from existing .system-map artifacts.")
+    impact.add_argument("root", help="Project root containing .system-map, or the .system-map directory itself.")
+    impact.add_argument("--diff", help="Diff file to analyze, or '-' for stdin. Defaults to git diff --diff-from.")
+    impact.add_argument("--diff-from", default="HEAD", help="Git revision/range to diff against when --diff is omitted.")
+    impact.add_argument("--output-root", default=".system-map", help="Generated map directory under root.")
+    impact.add_argument("--json", action="store_true")
+    impact.set_defaults(func=cmd_impact)
 
     # --- adr ---
     adr = sub.add_parser("adr", help="Manage machine-readable Architecture Decision Records for a mapped system.")

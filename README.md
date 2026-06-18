@@ -171,6 +171,16 @@ uv run system-mapper map-query /path/to/target "where is login session created?"
 
 `map-query` searches `.system-map/components/*.json`, pulls in connected `.system-map/edges/*.jsonl` records, and emits an `answer_context` block with claims, evidence IDs, related graph edges, and optional source snippets for a low-context human or LLM.
 
+To ask the map what a repo diff probably affects, use repo-level impact analysis:
+
+```bash
+uv run system-mapper impact /path/to/target --diff-from main --json
+# or
+uv run system-mapper impact /path/to/target --diff change.diff --json
+```
+
+`impact` reads existing `.system-map` component summaries and graph edges, extracts changed files from the diff, reports affected components, stale claims whose evidence files changed, related incoming/outgoing edges, and minimal refresh commands for remapping only touched slices.
+
 To turn existing map artifacts into a human-readable onboarding surface with an overview, guided reading path, component details, unknowns, evidence examples, and ADRs, render a map report:
 
 ```bash
