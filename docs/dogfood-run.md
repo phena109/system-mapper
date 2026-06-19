@@ -136,14 +136,13 @@ What this demonstrates:
 - `packet` packages a bounded handoff for a low-context worker.
 - Source-line citations are present for at least some call edges.
 
-## 5. Graph clustering, subsystem summaries, and architecture brief
+## 5. Graph clustering and subsystem summaries
 
 Commands:
 
 ```bash
 uv run system-mapper cluster "$ROOT/edges/src-system-mapper.jsonl" --json > "$ROOT/cluster.json"
 uv run system-mapper subsystem-summaries "$ROOT/edges/src-system-mapper.jsonl" --json > "$ROOT/subsystems.json"
-uv run system-mapper architecture-brief "$ROOT/edges/src-system-mapper.jsonl" > "$ROOT/architecture-brief.txt"
 ```
 
 Excerpt:
@@ -151,14 +150,12 @@ Excerpt:
 ```text
 clusters 2 nodes None edges None
 subsystems 2 ['src', 'src']
-['Likely entry point: src/system_mapper/runner.py', '', 'Top file-to-file relationships:', '  src/system_mapper/planner.py → src/system_mapper/inventory.py  (weight=1, kinds=internal)', '  src/system_mapper/planner.py → src/system_mapper/summarizer.py  (weight=1, kinds=internal)', '  src/system_mapper/quality.py → src/system_mapper/claims.py  (weight=1, kinds=internal)', '  src/system_mapper/runner.py → src/system_mapper/packet.py  (weight=1, kinds=internal)', '  src/system_mapper/runner.py → src/system_mapper/planner.py  (weight=1, kinds=internal)']
 ```
 
 What this demonstrates:
 
 - `cluster` groups connected graph records.
 - `subsystem-summaries` attempts to name and describe those connected groups.
-- `architecture-brief` produces a readable orientation summary from graph edges.
 
 What needs improvement:
 

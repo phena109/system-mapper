@@ -6,8 +6,6 @@ import shutil
 import sys
 from pathlib import Path
 
-from .architecture_brief import build_architecture_brief
-from .adr import add_decision, list_decisions
 from .claims import ClaimStore, validate_worker_output
 from .clusters import cluster_edge_file
 from .eval import create_sample_benchmark, evaluate_map_usefulness, load_benchmark
@@ -20,7 +18,6 @@ from .packet import build_work_packet
 from .planner import DEFAULT_TOKEN_LIMIT, build_slice_plan
 from .prompts import build_prompt
 from .quality import evaluate_map_quality
-from .report import build_map_report
 from .runner import run_next_slice
 from .summarizer import summarize_component
 from .update import update_summary_from_diff
@@ -134,18 +131,6 @@ def cmd_subsystem_summaries(args: argparse.Namespace) -> None:
             print()
 
 
-def cmd_architecture_brief(args: argparse.Namespace) -> None:
-    brief = build_architecture_brief(
-        args.edge_jsonl,
-        top_file_edges=args.top_file_edges,
-        min_edge_weight=args.min_edge_weight,
-    )
-    if args.json:
-        print(json.dumps(brief, indent=2, sort_keys=True))
-    else:
-        print(brief["text_brief"])
-
-
 def cmd_map_query(args: argparse.Namespace) -> None:
     result = query_system_map(
         args.root,
@@ -159,18 +144,6 @@ def cmd_map_query(args: argparse.Namespace) -> None:
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
         print(result["answer_context"] or "No matching mapped components found.")
-
-
-def cmd_map_report(args: argparse.Namespace) -> None:
-    result = build_map_report(
-        args.root,
-        output_root=args.output_root,
-        reading_limit=args.reading_limit,
-    )
-    if args.json:
-        print(json.dumps(result, indent=2, sort_keys=True))
-    else:
-        print(result["markdown"], end="")
 
 
 def cmd_impact(args: argparse.Namespace) -> None:
@@ -198,27 +171,6 @@ def cmd_impact(args: argparse.Namespace) -> None:
         print("refresh commands:")
         for command in result["refresh_commands"]:
             print(f"- {command}")
-
-
-def cmd_adr_add(args: argparse.Namespace) -> None:
-    try:
-        record = add_decision(
-            args.store,
-            title=args.title,
-            status=args.status,
-            context=args.context,
-            decision=args.decision,
-            consequences=args.consequences,
-            supersedes=args.supersedes or [],
-        )
-    except ValueError as exc:
-        raise SystemExit(str(exc)) from exc
-    print(json.dumps(record, indent=2, sort_keys=True))
-
-
-def cmd_adr_list(args: argparse.Namespace) -> None:
-    decisions = list_decisions(args.store, status=args.status)
-    print(json.dumps({"store": str(args.store), "total": len(decisions), "decisions": decisions}, indent=2, sort_keys=True))
 
 
 def cmd_prompt(args: argparse.Namespace) -> None:
@@ -520,17 +472,6 @@ def build_parser() -> argparse.ArgumentParser:
     ss.add_argument("--json", action="store_true")
     ss.set_defaults(func=cmd_subsystem_summaries)
 
-    # --- architecture-brief ---
-    brief = sub.add_parser(
-        "architecture-brief",
-        help="Produce a human-readable architecture brief from graph JSONL edges.",
-    )
-    brief.add_argument("edge_jsonl", help="Path to JSONL emitted by `system-mapper graph`.")
-    brief.add_argument("--json", action="store_true")
-    brief.add_argument("--top-file-edges", type=int, default=20, help="Maximum number of file-to-file edges to show.")
-    brief.add_argument("--min-edge-weight", type=int, default=1, help="Minimum edge weight to include.")
-    brief.set_defaults(func=cmd_architecture_brief)
-
     # --- map-query ---
     mq = sub.add_parser(
         "map-query",
@@ -554,17 +495,6 @@ def build_parser() -> argparse.ArgumentParser:
     mq.add_argument("--json", action="store_true")
     mq.set_defaults(func=cmd_map_query)
 
-    # --- map-report ---
-    mr = sub.add_parser(
-        "map-report",
-        help="Render a human-readable report and guided reading path from existing .system-map artifacts.",
-    )
-    mr.add_argument("root", help="Project root containing .system-map, or the .system-map directory itself.")
-    mr.add_argument("--output-root", default=".system-map", help="Generated map directory under root.")
-    mr.add_argument("--reading-limit", type=non_negative_int, default=8, help="Maximum components to include in the guided reading path.")
-    mr.add_argument("--json", action="store_true")
-    mr.set_defaults(func=cmd_map_report)
-
     # --- impact ---
     impact = sub.add_parser("impact", help="Analyze repo-level change impact from existing .system-map artifacts.")
     impact.add_argument("root", help="Project root containing .system-map, or the .system-map directory itself.")
@@ -573,24 +503,6 @@ def build_parser() -> argparse.ArgumentParser:
     impact.add_argument("--output-root", default=".system-map", help="Generated map directory under root.")
     impact.add_argument("--json", action="store_true")
     impact.set_defaults(func=cmd_impact)
-
-    # --- adr ---
-    adr = sub.add_parser("adr", help="Manage machine-readable Architecture Decision Records for a mapped system.")
-    adr_sub = adr.add_subparsers(required=True)
-    adr_add = adr_sub.add_parser("add", help="Add an architecture decision record.")
-    adr_add.add_argument("--store", default=".system-map/architecture-decisions.json")
-    adr_add.add_argument("--title", required=True)
-    adr_add.add_argument("--status", default="proposed", choices=["proposed", "accepted", "superseded", "deprecated", "rejected"])
-    adr_add.add_argument("--context", required=True)
-    adr_add.add_argument("--decision", required=True)
-    adr_add.add_argument("--consequences", required=True)
-    adr_add.add_argument("--supersedes", action="append", help="ADR id superseded by this decision. May be repeated.")
-    adr_add.set_defaults(func=cmd_adr_add)
-
-    adr_list = adr_sub.add_parser("list", help="List architecture decision records.")
-    adr_list.add_argument("--store", default=".system-map/architecture-decisions.json")
-    adr_list.add_argument("--status", choices=["proposed", "accepted", "superseded", "deprecated", "rejected"])
-    adr_list.set_defaults(func=cmd_adr_list)
 
     # --- packet ---
     packet = sub.add_parser("packet", help="Emit a bounded low-context AI work packet as JSON.")

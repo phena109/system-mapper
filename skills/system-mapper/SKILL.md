@@ -157,7 +157,6 @@ Cluster and summarize graph relationships:
 ```bash
 uv run system-mapper cluster .system-map/edges/src.jsonl --json
 uv run system-mapper subsystem-summaries .system-map/edges/src.jsonl --json
-uv run system-mapper architecture-brief .system-map/edges/src.jsonl
 ```
 
 Watch for weak subsystem names such as `src`; treat them as signals to improve naming or inspect clusters manually.

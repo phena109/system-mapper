@@ -154,7 +154,6 @@ To group connected graph nodes and get a subsystem-level view:
 ```bash
 uv run system-mapper cluster .system-map/edges/src.jsonl --json
 uv run system-mapper subsystem-summaries .system-map/edges/src.jsonl --json
-uv run system-mapper architecture-brief .system-map/edges/src.jsonl
 ```
 
 To ask a mapped repository a compact structural question without re-reading the whole codebase, query generated summaries and expand one graph hop around the matching components:
@@ -180,28 +179,6 @@ uv run system-mapper impact /path/to/target --diff change.diff --json
 ```
 
 `impact` reads existing `.system-map` component summaries and graph edges, extracts changed files from the diff, reports affected components, stale claims whose evidence files changed, related incoming/outgoing edges, and minimal refresh commands for remapping only touched slices.
-
-To turn existing map artifacts into a human-readable onboarding surface with an overview, guided reading path, component details, unknowns, evidence examples, and ADRs, render a map report:
-
-```bash
-uv run system-mapper map-report /path/to/target
-uv run system-mapper map-report /path/to/target --json
-```
-
-`map-report` is the lightweight front-end/readable-report slice: it borrows the explanatory purpose of Understand-Anything without hiding uncertainty or replacing deterministic artifacts with free-form architecture prose.
-
-To persist architectural decisions alongside the map, use the ADR store:
-
-```bash
-uv run system-mapper adr add \
-  --store /path/to/target/.system-map/architecture-decisions.json \
-  --title "Keep map artifacts in repo" \
-  --status accepted \
-  --context "Team members and agents should skip rediscovery." \
-  --decision "Commit compact generated map artifacts." \
-  --consequences "Future workers can reuse previous understanding."
-uv run system-mapper adr list --store /path/to/target/.system-map/architecture-decisions.json
-```
 
 ## Scenario: use a weak/local LLM worker
 
@@ -307,7 +284,7 @@ Merge preserves conflicts and can enrich the result from the claim store.
 
 ## Dogfood run: system-mapper mapping itself
 
-The README above is intentionally focused on the common usage path. For a fuller worked example, see [Dogfood run results](docs/dogfood-run.md). It shows real command output from running `system-mapper` against this repository, including inventory, slice planning, `next`, manual slice/graph/packet generation, graph clustering, architecture briefs, worker prompt generation, validation, claim import, quality checks, merge, update, prompts, and benchmark evaluation.
+The README above is intentionally focused on the common usage path. For a fuller worked example, see [Dogfood run results](docs/dogfood-run.md). It shows real command output from running `system-mapper` against this repository, including inventory, slice planning, `next`, manual slice/graph/packet generation, graph clustering, worker prompt generation, validation, claim import, quality checks, merge, update, prompts, and benchmark evaluation.
 
 The key lesson from the current run: the tool is useful for orientation and evidence packaging, but its own quality gate flagged generated summaries below the default threshold. Treat generated maps as reviewable evidence bundles, not final truth.
 
@@ -328,7 +305,6 @@ Run `uv run system-mapper <command> --help` for exact arguments.
 | `graph` | Emits dependency/data-flow/interface edges as JSONL, Mermaid, or DOT. |
 | `cluster` | Clusters graph JSONL into connected subsystem/community groups. |
 | `subsystem-summaries` | Produces subsystem summaries from graph clusters. |
-| `architecture-brief` | Produces a short human-readable brief from graph edges. |
 | `packet` | Builds a bounded low-context AI work packet. |
 | `prompt` | Prints built-in prompt contracts for `slice`, `update`, or `worker`. |
 | `worker run` | Generates a worker prompt bundle or calls an external LLM command. |
